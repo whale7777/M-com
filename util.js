@@ -1,5 +1,8 @@
-import { CONFIG } from './config.js';
+import { CONFIG } from './config.js?v=5';
 export const DAY = 864e5;
+// config.js 가 예전 버전이어도 동작하도록 기본 주소를 같이 둬요 (주소는 대소문자 구분!)
+export const PYNEST_URL = CONFIG.PYNEST_URL || 'https://whale7777.github.io/PYNEST/';
+export const MCOM_URL = CONFIG.MCOM_URL || 'https://whale7777.github.io/M-com/';
 export const $ = (s, r = document) => r.querySelector(s);
 export const $$ = (s, r = document) => [...r.querySelectorAll(s)];
 export const esc = (s = '') => String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -14,7 +17,7 @@ export const ID_RE = /^[a-z0-9_]{3,20}$/; // PyNest 와 같은 ID 규칙
 // 링크는 http(s) 또는 사이트 안 주소(#...)만 허용
 export const safeLink = (u) => {
   const s = String(u || '').trim();
-  if (s === '@pynest') return CONFIG.PYNEST_URL || '#/'; // 설정 파일의 PyNest 주소로 바뀌는 약속된 글자
+  if (s === '@pynest') return PYNEST_URL; // 설정 파일의 PyNest 주소로 바뀌는 약속된 글자
   if (/^#/.test(s)) return s;
   return /^https?:\/\//i.test(s) ? s : '#/';
 };

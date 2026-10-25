@@ -1,5 +1,5 @@
-import { DAY, clone, fmtDate } from './util.js';
-import { DEFAULT_TAX, DEFAULT_SITE, buildPrem } from './defaults.js';
+import { DAY, clone, fmtDate } from './util.js?v=5';
+import { DEFAULT_TAX, DEFAULT_SITE, buildPrem } from './defaults.js?v=5';
 
 const must = ({ data, error }) => { if (error) throw error; return data; };
 
@@ -174,7 +174,7 @@ export function supabaseBackend(sb) {
       if (error) throw new Error('ID 또는 비밀번호가 맞지 않아요');
     },
     signup: async (id, pw) => {
-      const { error } = await sb.auth.signUp({ email: emailOf(id), password: pw, options: { data: { username: id.toLowerCase() } } });
+      const { error } = await sb.auth.signUp({ email: emailOf(id), password: pw, options: { data: { username: id.toLowerCase(), src: 'mcom' } } });
       if (error) throw new Error(/registered|already|exists/i.test(error.message) ? '이미 있는 ID예요' : '가입에 실패했어요: ' + error.message);
     },
     logout: () => sb.auth.signOut(),

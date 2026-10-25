@@ -7,7 +7,8 @@
 <meta name="color-scheme" content="light">
 <meta name="description" content="물리·화학·생물·지구과학 엄선 문제 PDF">
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.min.css">
-<link rel="stylesheet" href="style.css">
+<style>.drawer{position:fixed;top:0;bottom:0;left:0;width:300px;max-width:84vw;transform:translateX(-102%);visibility:hidden;background:#fff;z-index:100}.drawer.open{transform:none;visibility:visible}.drawer-bg{position:fixed;inset:0;visibility:hidden;z-index:90}.drawer-bg.open{visibility:visible}</style>
+<link rel="stylesheet" href="style.css?v=5">
 </head>
 <body>
 <div id="notice" class="notice hidden"></div>
@@ -227,6 +228,7 @@
 
   <div id="tabSite" class="tabpane hidden">
     <form id="formSite" class="form card-form">
+      <label class="check"><input type="checkbox" name="autoApprove"> 민혁닷컴에서 가입한 사람은 PyNest 도 바로 사용 가능 (PyNest 자동 승인) — ⚠️ 끄면 PyNest 는 선생님이 승인해야 해요</label>
       <label class="check"><input type="checkbox" name="autoPass"> PyNest에서 승인된 학생은 자동으로 M패스 (프리미엄·해설 전체 열림)</label>
       <label class="check"><input type="checkbox" name="noticeOn"> 상단 공지 배너 표시</label>
       <label>공지 내용<textarea name="notice" rows="2" placeholder="예) 11월 모의고사 세트 업로드 완료!"></textarea></label>
@@ -247,6 +249,6 @@
 </dialog>
 
 <div id="toast" class="toast"></div>
-<script type="module" src="app.js"></script>
+<script type="module" src="app.js?v=5"></script>
 </body>
 </html>

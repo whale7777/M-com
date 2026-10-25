@@ -87,7 +87,7 @@ code{background:var(--line2);padding:1px 6px;border-radius:5px;font-size:.85em}
 .btn:disabled{opacity:.5;cursor:not-allowed}
 
 /* ---- 공통 블록 ---- */
-main{padding-top:24px;padding-bottom:56px;min-height:60vh}
+main{padding-top:28px;padding-bottom:56px;min-height:60vh}
 .blk{margin-top:38px}
 .blk-h{display:flex;align-items:baseline;justify-content:space-between;margin-bottom:14px}
 .blk-h h2{font-size:1.3rem;font-weight:800}

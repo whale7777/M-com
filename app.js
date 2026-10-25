@@ -1,9 +1,9 @@
-import { CONFIG } from './config.js';
-import { $, $$, esc, clone, safeColor, safeLink, num, fmtDT, ID_RE, toast, triggerDownload, DAY } from './util.js';
-import { DEFAULT_TAX, DEFAULT_SITE, DEFAULT_MENU } from './defaults.js';
-import { demoBackend, supabaseBackend } from './backend.js';
-import { S, subj, unitOf, created, isNew, visibleFiles, unlocked, canMain, canSol, buyable } from './state.js';
-import { bindAdmin, openAdmin, adminClick } from './admin.js';
+import { CONFIG } from './config.js?v=5';
+import { $, $$, esc, clone, safeColor, safeLink, num, fmtDT, ID_RE, toast, triggerDownload, DAY, PYNEST_URL } from './util.js?v=5';
+import { DEFAULT_TAX, DEFAULT_SITE, DEFAULT_MENU } from './defaults.js?v=5';
+import { demoBackend, supabaseBackend } from './backend.js?v=5';
+import { S, subj, unitOf, created, isNew, visibleFiles, unlocked, canMain, canSol, buyable } from './state.js?v=5';
+import { bindAdmin, openAdmin, adminClick } from './admin.js?v=5';
 
 S.DEMO = !CONFIG.SUPABASE_URL || /여기에/.test(CONFIG.SUPABASE_URL) || new URLSearchParams(location.search).has('demo');
 const demoFlags = {};
@@ -69,8 +69,8 @@ function renderChrome() {
   $('#contact').textContent = S.site.contact || '';
   $('#year').textContent = new Date().getFullYear();
   $('#aboutShort').textContent = (S.site.about || '').split('\n')[0];
-  $('#ftPynest').href = safeLink(CONFIG.PYNEST_URL || '#/');
-  const py = safeLink(CONFIG.PYNEST_URL || '#/');
+  $('#ftPynest').href = safeLink(PYNEST_URL);
+  const py = safeLink(PYNEST_URL);
   $('#swPynest').href = py;
   $('#swPynest2').href = py;
   renderDrawerNav();
@@ -505,6 +505,9 @@ function renderAuthTab() {
   });
   $('#authPw2Wrap').classList.toggle('hidden', !signup);
   $('#authSignupNote').classList.toggle('hidden', !signup);
+  $('#authSignupNote').textContent = S.site.autoApprove !== false
+    ? 'PyNest와 같은 계정이에요. 가입하면 PyNest에서도 같은 ID·비밀번호로 바로 로그인할 수 있어요.'
+    : 'PyNest와 같은 계정이 만들어져요. 가입해도 PyNest 강의 사이트는 선생님이 승인해야 쓸 수 있어요.';
   $('#authSubmit').textContent = signup ? '가입하기' : '로그인';
   $('#authPw').setAttribute('autocomplete', signup ? 'new-password' : 'current-password');
 }

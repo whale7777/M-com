@@ -1,6 +1,6 @@
-import { $, $$, esc, clone, uid, safeColor, fmtDate, fmtDT, num, ID_RE, toast, extractDriveId, saveBlob, move, DAY } from './util.js';
-import { S, subj, unitOf, created } from './state.js';
-import { DEFAULT_MENU } from './defaults.js';
+import { $, $$, esc, clone, uid, safeColor, fmtDate, fmtDT, num, ID_RE, toast, extractDriveId, saveBlob, move, DAY } from './util.js?v=5';
+import { S, subj, unitOf, created } from './state.js?v=5';
+import { DEFAULT_MENU } from './defaults.js?v=5';
 
 let editId = null, taxDraft = null, taxDirty = false, bannerDraft = null, bannerDirty = false, menuDraft = null, menuDirty = false;
 let passCache = [], pointsCache = [], chargesCache = [], ledgerCache = [];
@@ -413,6 +413,7 @@ function fillSiteForm() {
   const f = $('#formSite').elements;
   f.noticeOn.checked = !!S.site.noticeOn;
   f.autoPass.checked = !!S.site.autoPass;
+  f.autoApprove.checked = S.site.autoApprove !== false;
   f.notice.value = S.site.notice || '';
   f.heroSub.value = S.site.heroSub || '';
   f.contact.value = S.site.contact || '';
@@ -427,7 +428,7 @@ async function submitSite(e) {
   const packs = parsePacks(f.packs.value);
   if (f.packs.value.trim() && !packs.length) return toast('충전 상품 형식을 확인해줘 (예: 1000 | 1,000원)');
   const next = {
-    ...S.site, noticeOn: f.noticeOn.checked, autoPass: f.autoPass.checked, notice: f.notice.value.trim(), heroSub: f.heroSub.value.trim(),
+    ...S.site, noticeOn: f.noticeOn.checked, autoPass: f.autoPass.checked, autoApprove: f.autoApprove.checked, notice: f.notice.value.trim(), heroSub: f.heroSub.value.trim(),
     contact: f.contact.value.trim(), passInfo: f.passInfo.value.trim(), chargeInfo: f.chargeInfo.value.trim(), about: f.about.value.trim(), packs,
   };
   try { await S.api.saveSite(next); S.site = next; await S.hooks.route(); toast('설정 저장 완료 ✨'); }
