@@ -1,10 +1,10 @@
-import { CONFIG } from './config.js?v=10';
-import { $, $$, esc, clone, safeColor, safeLink, num, fmtDT, fmtDate, richText, ID_RE, toast, triggerDownload, DAY, PYNEST_URL } from './util.js?v=10';
-import { DEFAULT_TAX, DEFAULT_SITE, DEFAULT_MENU, DEFAULT_PLANS, DEFAULT_BANNERS } from './defaults.js?v=10';
-import { demoBackend, supabaseBackend } from './backend.js?v=10';
-import { S, subj, unitOf, findUnit, unitPath, unitIds, flatUnits, created, isNew, visibleFiles, unlocked, canMain, canSol, buyable, claimable, hasPreview } from './state.js?v=10';
-import { bindAdmin, openAdmin, adminClick } from './admin.js?v=10';
-import { pencil, startEdit, cancelEdit, commitEdit, newPageHTML, afterNewPage, filePanelHTML, openFilePanel, bindEditor } from './editor.js?v=10';
+import { CONFIG } from './config.js?v=11';
+import { $, $$, esc, clone, safeColor, safeLink, num, fmtDT, fmtDate, richText, ID_RE, toast, triggerDownload, DAY, PYNEST_URL } from './util.js?v=11';
+import { DEFAULT_TAX, DEFAULT_SITE, DEFAULT_MENU, DEFAULT_PLANS, DEFAULT_BANNERS } from './defaults.js?v=11';
+import { demoBackend, supabaseBackend } from './backend.js?v=11';
+import { S, subj, unitOf, findUnit, unitPath, unitIds, flatUnits, created, isNew, visibleFiles, unlocked, canMain, canSol, buyable, claimable, hasPreview } from './state.js?v=11';
+import { bindAdmin, openAdmin, adminClick } from './admin.js?v=11';
+import { pencil, startEdit, cancelEdit, commitEdit, newPageHTML, afterNewPage, filePanelHTML, openFilePanel, bindEditor } from './editor.js?v=11';
 
 S.DEMO = !CONFIG.SUPABASE_URL || /여기에/.test(CONFIG.SUPABASE_URL) || new URLSearchParams(location.search).has('demo');
 const demoFlags = {};
@@ -270,6 +270,7 @@ function listHash() {
   if (view.tier !== 'all') p.set('tier', view.tier);
   if (view.sort !== 'new') p.set('sort', view.sort);
   if (view.q) p.set('q', view.q);
+  if (view.mode === 'list') p.set('mode', 'list');
   return base + (p.toString() ? '?' + p : '');
 }
 function listHTML() {
@@ -306,27 +307,39 @@ function tileHTML(f) {
   return `<div class="tl ${lock ? 'lock' : ''} ${f.visible === false ? 'hid' : ''}"><a class="tl-t" href="#/f/${encodeURIComponent(f.id)}" title="${esc(f.title)}">${esc(f.title)}${isNew(f) ? '<em class="nw">N</em>' : ''}${f.visible === false ? '<em class="hd">숨김</em>' : ''}</a>
     ${open ? `<button class="tl-i" data-dl="${esc(f.id)}" type="button" aria-label="다운로드">⬇</button>` : `<a class="tl-i" href="#/f/${encodeURIComponent(f.id)}" aria-label="자세히">${buyable(f) ? '🪙' : '🔒'}</a>`}</div>`;
 }
-function leafHTML(sj, u, files) {
-  const mine = files.filter((f) => f.subject === sj.id && f.unit === u.id).sort(natural);
-  return `<div class="leaf"><div class="leaf-h"><b>${esc(u.name)}</b>${S.isAdmin ? `<button class="linkbtn" data-act="admin-new" data-s="${esc(sj.id)}" data-u="${esc(u.id)}" type="button">＋ 자료</button>` : ''}</div>
-    ${mine.length ? `<div class="tiles">${mine.map(tileHTML).join('')}</div>` : '<p class="note">아직 올라온 자료가 없어요.</p>'}</div>`;
+const treeDepth = (units) => Math.max(0, ...(units || []).map((u) => 1 + treeDepth(u.children)));
+const unitHref = (sj, id) => `#/${encodeURIComponent(sj.id)}${id ? '/' + encodeURIComponent(id) : ''}`;
+// 계층 선택 박스: 계층 수만큼, 앞 박스에서 고르면 그 하위 폴더가 다음 박스에 나와요
+function cascadeHTML(sj, un) {
+  const path = un ? unitPath(sj, un.id) : [];
+  const levels = treeDepth(sj.units);
+  if (!levels) return '';
+  const boxes = [];
+  for (let i = 0; i < levels; i++) {
+    const opts = i === 0 ? (sj.units || []) : (path[i - 1]?.children || []);
+    const cur = path[i]?.id || '';
+    boxes.push(`<select class="cs" data-lv="${i}" aria-label="${i + 1}단계 폴더" ${opts.length ? '' : 'disabled'}>
+      <option value="">${i === 0 ? '전체' : '전체 (하위 전체)'}</option>${opts.map((o) => `<option value="${esc(o.id)}" ${o.id === cur ? 'selected' : ''}>${esc(o.name)}</option>`).join('')}</select>`);
+  }
+  return `<div class="cascade"><span class="cs-l">폴더</span>${boxes.join('<span class="cs-a">›</span>')}</div>`;
 }
-function nodeHTML(sj, u, files, depth) {
-  const kids = u.children || [];
-  if (!kids.length) return leafHTML(sj, u, files);
-  const ids = unitIds(u);
-  const n = files.filter((f) => f.subject === sj.id && ids.includes(f.unit)).length;
-  const own = files.filter((f) => f.subject === sj.id && f.unit === u.id).sort(natural);
-  return `<details class="fd fd${Math.min(depth, 3)}" open><summary><span>${esc(u.name)}</span><i>${n}</i></summary>
-    ${own.length ? `<div class="tiles own">${own.map(tileHTML).join('')}</div>` : ''}
-    <div class="fd-body">${kids.map((k) => nodeHTML(sj, k, files, depth + 1)).join('')}</div></details>`;
+// 최하위(자료가 담기는) 폴더 블럭을 순서대로
+function blocksOf(sj, nodes, trail, files, out) {
+  for (const u of nodes) {
+    const kids = u.children || [];
+    const mine = files.filter((f) => f.subject === sj.id && f.unit === u.id).sort(natural);
+    if (!kids.length || mine.length) out.push({ u, trail, mine });
+    if (kids.length) blocksOf(sj, kids, [...trail, u.name], files, out);
+  }
+  return out;
 }
 function folderHTML(sj, un) {
   const files = S.files.filter((f) => f.visible !== false || S.isAdmin);
-  const nodes = un ? [un] : (sj.units || []);
+  const blocks = blocksOf(sj, un ? [un] : (sj.units || []), un ? unitPath(sj, un.id).slice(0, -1).map((x) => x.name) : [], files, []);
   const loose = un ? [] : files.filter((f) => f.subject === sj.id && !findUnit(sj, f.unit)).sort(natural);
-  const body = nodes.map((u) => nodeHTML(sj, u, files, 0)).join('');
-  return `<div class="folder">${body || '<p class="empty">아직 단원이 없어요. 관리자 › 과목·단원에서 폴더를 만들어줘.</p>'}
+  const card = (b) => `<div class="leaf"><div class="leaf-h"><b>${b.trail.length ? `<span class="trail">${b.trail.map(esc).join(' › ')} › </span>` : ''}${esc(b.u.name)}</b>${S.isAdmin ? `<button class="linkbtn" data-act="admin-new" data-s="${esc(sj.id)}" data-u="${esc(b.u.id)}" type="button">＋ 자료</button>` : ''}</div>
+    ${b.mine.length ? `<div class="tiles">${b.mine.map(tileHTML).join('')}</div>` : '<p class="note">아직 올라온 자료가 없어요.</p>'}</div>`;
+  return `${cascadeHTML(sj, un)}<div class="folder">${blocks.map(card).join('') || '<p class="empty">아직 단원이 없어요. 관리자 › 과목·단원에서 폴더를 만들어줘.</p>'}
     ${loose.length ? `<div class="leaf"><div class="leaf-h"><b>미분류</b></div><div class="tiles">${loose.map(tileHTML).join('')}</div></div>` : ''}</div>`;
 }
 function renderListGrid() {
@@ -735,6 +748,14 @@ function bind() {
   });
   document.addEventListener('change', (e) => {
     const t = e.target;
+    if (t.classList?.contains('cs')) {
+      const sj = subj(view.s); if (!sj) return;
+      const path = view.u !== 'all' ? unitPath(sj, view.u) : [];
+      const lv = Number(t.dataset.lv);
+      const id = t.value || path[lv - 1]?.id || '';
+      location.hash = unitHref(sj, id);
+      return;
+    }
     if (t.id === 'tierSel') { view.tier = t.value; renderListGrid(); }
     if (t.id === 'sortSel') { view.sort = t.value; renderListGrid(); }
     if (t.name === 'pack') { packSel = Number(t.value) || 0; $$('.pack').forEach((p, i) => p.classList.toggle('on', i === packSel)); }

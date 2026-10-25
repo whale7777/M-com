@@ -1,5 +1,5 @@
-import { DAY, clone, fmtDate, driveDownloadUrl, drivePreviewUrl } from './util.js?v=10';
-import { DEFAULT_TAX, DEFAULT_SITE, buildPrem } from './defaults.js?v=10';
+import { DAY, clone, fmtDate, driveDownloadUrl, drivePreviewUrl } from './util.js?v=11';
+import { DEFAULT_TAX, DEFAULT_SITE, buildPrem } from './defaults.js?v=11';
 
 const must = ({ data, error }) => { if (error) throw error; return data; };
 

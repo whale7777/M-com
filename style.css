@@ -398,3 +398,10 @@ textarea.ed-in{width:100%;resize:vertical}
 .plan .btn{margin-top:8px}
 .plan .ribbon{position:absolute;top:-11px;right:14px;background:var(--pass);color:#fff;font-size:.72rem;font-weight:800;padding:3px 10px;border-radius:99px}
 @media(max-width:560px){.ed-in.num{width:100px}.n-title{font-size:1.15rem}}
+
+.cascade{display:flex;flex-wrap:wrap;align-items:center;gap:6px;margin-bottom:12px}
+.cascade .cs{min-width:110px;max-width:100%;padding:8px 10px;border:1px solid var(--line);border-radius:10px;background:var(--surface);color:var(--text);font:inherit}
+.cascade .cs:disabled{opacity:.45}
+.cs-l{font-weight:800;font-size:.85rem;color:var(--muted)}.cs-a{color:var(--muted)}
+.leaf-h .trail{font-weight:500;color:var(--muted);font-size:.85em}
+.folder{gap:12px}
