@@ -1,9 +1,9 @@
-import { CONFIG } from './config.js?v=7';
-import { $, $$, esc, clone, safeColor, safeLink, num, fmtDT, fmtDate, richText, ID_RE, toast, triggerDownload, DAY, PYNEST_URL } from './util.js?v=7';
-import { DEFAULT_TAX, DEFAULT_SITE, DEFAULT_MENU } from './defaults.js?v=7';
-import { demoBackend, supabaseBackend } from './backend.js?v=7';
-import { S, subj, unitOf, created, isNew, visibleFiles, unlocked, canMain, canSol, buyable, hasPreview } from './state.js?v=7';
-import { bindAdmin, openAdmin, adminClick, openAdminNewFile, openAdminEditFile } from './admin.js?v=7';
+import { CONFIG } from './config.js?v=8';
+import { $, $$, esc, clone, safeColor, safeLink, num, fmtDT, fmtDate, richText, ID_RE, toast, triggerDownload, DAY, PYNEST_URL } from './util.js?v=8';
+import { DEFAULT_TAX, DEFAULT_SITE, DEFAULT_MENU } from './defaults.js?v=8';
+import { demoBackend, supabaseBackend } from './backend.js?v=8';
+import { S, subj, unitOf, created, isNew, visibleFiles, unlocked, canMain, canSol, buyable, hasPreview } from './state.js?v=8';
+import { bindAdmin, openAdmin, adminClick, openAdminNewFile, openAdminEditFile } from './admin.js?v=8';
 
 S.DEMO = !CONFIG.SUPABASE_URL || /여기에/.test(CONFIG.SUPABASE_URL) || new URLSearchParams(location.search).has('demo');
 const demoFlags = {};

@@ -331,3 +331,4 @@ fieldset.src input[type=text],fieldset.src input[type=url],fieldset.src input[ty
 .post-body{margin-top:14px;white-space:pre-line;word-break:break-word}
 .seg label{flex-direction:row!important;display:inline-flex!important;align-items:center;margin:0;white-space:nowrap}
 .seg input[type=radio]{width:auto;margin:0}
+.file-err{background:var(--danger-bg);color:var(--danger);border-radius:10px;padding:10px 12px;font-size:.88rem;white-space:pre-line;word-break:break-word;margin:10px 0}

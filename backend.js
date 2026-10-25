@@ -1,5 +1,5 @@
-import { DAY, clone, fmtDate, driveDownloadUrl, drivePreviewUrl } from './util.js?v=7';
-import { DEFAULT_TAX, DEFAULT_SITE, buildPrem } from './defaults.js?v=7';
+import { DAY, clone, fmtDate, driveDownloadUrl, drivePreviewUrl } from './util.js?v=8';
+import { DEFAULT_TAX, DEFAULT_SITE, buildPrem } from './defaults.js?v=8';
 
 const must = ({ data, error }) => { if (error) throw error; return data; };
 
@@ -173,9 +173,9 @@ export function supabaseBackend(sb) {
   const KINDS = ['main', 'solution', 'preview'];
   const objPath = (id, kind) => `${id}/${kind}.pdf`;
   const safeName = (t, kind) => `${String(t || 'file').replace(/[\\/:*?"<>|\r\n]+/g, ' ').trim().slice(0, 80) || 'file'}${kind === 'solution' ? ' 해설' : ''}.pdf`;
-  const uploadAll = async (id, up = {}) => {
+  const uploadAll = async (id, up = {}, upsert = true) => {
     for (const k of KINDS) {
-      if (up[k]) must(await sb.storage.from(BUCKET).upload(objPath(id, k), up[k], { upsert: true, contentType: 'application/pdf', cacheControl: '3600' }));
+      if (up[k]) must(await sb.storage.from(BUCKET).upload(objPath(id, k), up[k], { upsert, contentType: 'application/pdf', cacheControl: '3600' }));
     }
   };
   const removeObjects = async (id, kinds = KINDS) => { try { await sb.storage.from(BUCKET).remove(kinds.map((k) => objPath(id, k))); } catch { /* 없어도 괜찮아요 */ } };
@@ -254,7 +254,7 @@ export function supabaseBackend(sb) {
     addFile: async (f, ids, up = {}) => {
       const { id } = must(await sb.from('mh_files').insert({ ...toRow(f), drive_id: f.tier === 'free' && f.mainSrc !== 'upload' ? nz(ids.main) : null }).select('id').single());
       try {
-        await uploadAll(id, up);
+        await uploadAll(id, up, false);
         const prem = buildPrem(f.tier, ids);
         if (Object.keys(prem).length) must(await sb.from('mh_premium').insert(premRow(id, prem)));
       } catch (err) { // 중간에 실패하면 반쯤 만들어진 자료를 지워요

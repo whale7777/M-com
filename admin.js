@@ -1,6 +1,6 @@
-import { $, $$, esc, clone, uid, safeColor, fmtDate, fmtDT, num, ID_RE, toast, extractDriveId, saveBlob, move, DAY, MAX_UPLOAD_MB, fmtSize } from './util.js?v=7';
-import { S, subj, unitOf, created } from './state.js?v=7';
-import { DEFAULT_MENU } from './defaults.js?v=7';
+import { $, $$, esc, clone, uid, safeColor, fmtDate, fmtDT, num, ID_RE, toast, extractDriveId, saveBlob, move, DAY, MAX_UPLOAD_MB, fmtSize } from './util.js?v=8';
+import { S, subj, unitOf, created } from './state.js?v=8';
+import { DEFAULT_MENU } from './defaults.js?v=8';
 
 let editId = null, taxDraft = null, taxDirty = false, bannerDraft = null, bannerDirty = false, menuDraft = null, menuDirty = false;
 let passCache = [], pointsCache = [], chargesCache = [], ledgerCache = [];
@@ -219,6 +219,7 @@ async function submitFile(e) {
   if (prev.file) up.preview = prev.file;
   const btn = $('#btnSaveFile');
   const label = btn.textContent;
+  $('#fileErr')?.classList.add('hidden');
   btn.disabled = true;
   if (Object.keys(up).length) btn.textContent = '업로드 중… (창을 닫지 마세요)';
   try {
@@ -232,7 +233,17 @@ async function submitFile(e) {
   } catch (err) {
     console.error(err);
     btn.disabled = false; btn.textContent = label;
-    toast(Object.keys(up).length ? '업로드/저장 실패 (schema.sql v5 실행 / 용량 / 관리자 계정 확인)' : FAIL);
+    const raw = String(err?.message || err?.error || err || '').slice(0, 300);
+    let hint = 'schema.sql 전체를 다시 실행했는지, 관리자로 로그인돼 있는지 확인해줘.';
+    if (/row-level security|policy|unauthorized|403/i.test(raw)) hint = '권한 오류야. 관리자 계정인지(profiles.role=admin) 확인하고, 로그아웃 후 다시 로그인해봐. schema.sql 전체 재실행도 필요해.';
+    else if (/bucket.*not found|not found/i.test(raw)) hint = '저장소(mh-files)가 없어. schema.sql 전체를 SQL Editor에서 다시 실행해줘.';
+    else if (/column|schema cache|main_src/i.test(raw)) hint = '테이블에 새 칸이 없어. schema.sql 전체를 다시 실행해줘.';
+    else if (/size|exceed|too large|413/i.test(raw)) hint = '파일이 너무 커. 용량을 줄여서 다시 해봐.';
+    let box = $('#fileErr');
+    if (!box) { box = document.createElement('p'); box.id = 'fileErr'; box.className = 'file-err'; btn.parentNode.insertBefore(box, btn); }
+    box.textContent = `❌ 저장 실패: ${raw || '알 수 없는 오류'}\n👉 ${hint}`;
+    box.classList.remove('hidden');
+    toast('저장 실패 — 폼 아래 빨간 글씨를 확인해줘');
   }
 }
 
