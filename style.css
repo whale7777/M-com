@@ -332,3 +332,69 @@ fieldset.src input[type=text],fieldset.src input[type=url],fieldset.src input[ty
 .seg label{flex-direction:row!important;display:inline-flex!important;align-items:center;margin:0;white-space:nowrap}
 .seg input[type=radio]{width:auto;margin:0}
 .file-err{background:var(--danger-bg);color:var(--danger);border-radius:10px;padding:10px 12px;font-size:.88rem;white-space:pre-line;word-break:break-word;margin:10px 0}
+
+/* ---- v6: 폴더형 단원 / 회차 칸 ---- */
+.units.sub{padding-left:14px;border-left:2px solid var(--line);margin:6px 0 0 6px}
+.unit-node{display:flex;flex-direction:column;gap:6px}
+.dr-link.d1{padding-left:26px}.dr-link.d2{padding-left:40px}.dr-link.d3{padding-left:54px}
+.dr-link.d1,.dr-link.d2,.dr-link.d3{font-weight:600;font-size:.88rem}
+.sl.sub.d1{padding-left:38px}.sl.sub.d2{padding-left:50px}.sl.sub.d3{padding-left:62px}
+.folder{display:flex;flex-direction:column;gap:12px}
+.fd{background:var(--surface);border:1px solid var(--line);border-radius:14px;overflow:hidden}
+.fd>summary{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:14px 16px;font-weight:800;cursor:pointer;list-style:none}
+.fd>summary::-webkit-details-marker{display:none}
+.fd>summary::after{content:"⌄";color:var(--muted);font-weight:400;margin-left:auto;transition:transform .15s}
+.fd[open]>summary::after{transform:rotate(180deg)}
+.fd>summary i{font-style:normal;font-size:.75rem;font-weight:700;background:var(--brand-bg);color:var(--brand);border-radius:99px;padding:1px 8px}
+.fd-body{display:flex;flex-direction:column;gap:12px;padding:0 12px 14px}
+.fd .fd{border-color:var(--line2);background:var(--bg)}
+.fd .fd>summary{font-size:.95rem;font-weight:700}
+.leaf{background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:14px}
+.fd .fd .leaf{box-shadow:var(--shadow)}
+.leaf-h{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:10px}
+.leaf-h b{font-size:1rem}
+.tiles{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}
+@media(min-width:720px){.tiles{grid-template-columns:repeat(3,minmax(0,1fr))}}
+.tiles.own{padding:0 12px 12px}
+.tl{display:flex;align-items:center;justify-content:space-between;gap:6px;background:var(--bg);border-radius:12px;padding:6px 6px 6px 14px;min-width:0}
+.tl-t{font-weight:600;font-size:.92rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0;flex:1;padding:8px 0}
+.tl-t .nw{font-style:normal;font-size:.65rem;font-weight:800;color:#fff;background:var(--danger);border-radius:99px;padding:0 5px;margin-left:5px}
+.tl-t .hd{font-style:normal;font-size:.65rem;color:var(--muted);margin-left:5px}
+.tl-i{flex:none;width:34px;height:34px;border-radius:50%;border:1px solid var(--line);background:#fff;color:var(--brand);display:grid;place-items:center;cursor:pointer;font-size:.95rem}
+.tl.lock .tl-i{color:var(--muted)}.tl.hid{opacity:.6}
+
+/* ---- v7: 연필 수정 / 새 자료 페이지 / M패스 플랜 ---- */
+.pencil{background:none;border:0;padding:2px 6px;margin-left:2px;border-radius:8px;cursor:pointer;font-size:.8em;line-height:1;opacity:.55;vertical-align:middle}
+.pencil:hover,.pencil:focus-visible{opacity:1;background:var(--brand-bg)}
+.pencil small{font-size:.8rem;font-weight:700;color:var(--brand)}
+.edhost{display:inline}
+.edhost.editing{display:block}
+.ed-box{display:flex;flex-wrap:wrap;gap:8px;align-items:center;font-size:1rem;font-weight:600}
+.ed-in{padding:9px 11px;border:1.5px solid var(--brand);border-radius:10px;background:#fff;min-width:0;max-width:100%;font-weight:600}
+.ed-in.num{width:120px}
+textarea.ed-in{width:100%;resize:vertical}
+.d-info h1 .ed-in{font-size:1.2rem;width:100%}
+.ed-hint{flex-basis:100%;color:var(--muted);font-weight:500;font-size:.8rem}
+.ed-btns{display:inline-flex;gap:6px}
+.adm-row{display:flex;flex-wrap:wrap;gap:6px;margin:0 0 12px}
+.btn.danger{color:var(--danger);border-color:var(--danger)}
+.btn.pass{background:var(--pass);border-color:var(--pass);color:#fff}
+.btn.pass small{opacity:.85;font-weight:600}
+.d-sec h2 .pencil{opacity:1}
+#formSrc{margin-top:14px;padding-top:14px;border-top:1px dashed var(--line)}
+.new-page .n-place{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:10px}
+.new-page .n-place select,.new-page select,.new-page input[type=number]{padding:9px 11px;border:1.5px solid var(--line);border-radius:10px;background:#fff}
+.n-title{width:100%;font-size:1.4rem;font-weight:900;padding:10px 12px;border:1.5px dashed var(--brand);border-radius:12px;background:#fff;margin-bottom:10px}
+.n-desc{width:100%;padding:10px 12px;border:1.5px solid var(--line);border-radius:12px;background:#fff;margin-bottom:12px;resize:vertical}
+.new-page .spec input[type=number]{width:90px}
+.n-price{display:flex;align-items:center;gap:8px;font-size:1.6rem;font-weight:900;color:#a15a00}
+.n-price input{width:140px;font-size:1.4rem;font-weight:900;padding:8px 10px;border:1.5px solid var(--pts);border-radius:10px}
+.plans{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:14px;margin-bottom:18px}
+.plan{position:relative;display:flex;flex-direction:column;gap:6px;background:#fff;border:1px solid var(--line);border-radius:18px;padding:22px 18px 18px}
+.plan.best{border:2px solid var(--pass);box-shadow:var(--shadow)}
+.plan h3{font-size:1.05rem}
+.plan-q{font-size:2.2rem;font-weight:900;color:var(--pass);line-height:1.1}.plan-q small{font-size:1rem;margin-left:2px}
+.plan-p{font-size:1.25rem;font-weight:800;color:#a15a00}
+.plan .btn{margin-top:8px}
+.plan .ribbon{position:absolute;top:-11px;right:14px;background:var(--pass);color:#fff;font-size:.72rem;font-weight:800;padding:3px 10px;border-radius:99px}
+@media(max-width:560px){.ed-in.num{width:100px}.n-title{font-size:1.15rem}}

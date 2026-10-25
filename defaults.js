@@ -1,4 +1,4 @@
-import { CONFIG } from './config.js?v=8';
+import { CONFIG } from './config.js?v=10';
 
 // 처음 한 번만 쓰이는 기본 과목·단원. 관리자 패널에서 마음대로 바꿀 수 있어.
 export const DEFAULT_TAX = [
@@ -16,7 +16,7 @@ export const DEFAULT_TAX = [
 ];
 
 export const DEFAULT_BANNERS = [
-  { id: 'b_pass', on: true, title: 'M패스 하나로\n프리미엄 전 자료 무제한', sub: '신규 세트가 올라와도 추가 결제 없이 문제·해설 모두 다운로드', cta: 'M패스 알아보기', link: '#/pass', color: '#4f46e5', emoji: '👑' },
+  { id: 'b_pass', on: true, title: 'M패스로 더 싸게\n자료를 모아보세요', sub: '45일 3,900원부터. 1건당 최대 33% 저렴하게 문제·해설을 받아요', cta: 'M패스 알아보기', link: '#/pass', color: '#4f46e5', emoji: '👑' },
   { id: 'b_point', on: true, title: '필요한 세트만 골라서\nM포인트로 구매', sub: '충전 신청 → 승인 → 바로 다운로드. 한 번 산 자료는 계속 받을 수 있어요', cta: 'M포인트 충전하기', link: '#/points', color: '#0ea5a4', emoji: '🪙' },
   { id: 'b_pynest', on: true, title: '파이썬은 PyNest에서\n수업과 과제를 한 곳에', sub: '민혁닷컴 계정(ID)으로 그대로 로그인할 수 있어요', cta: 'PyNest 바로가기', link: '@pynest', color: '#e8590c', emoji: '🐍' },
 ];
@@ -38,19 +38,30 @@ export const DEFAULT_MENU = [
 
 export const DEFAULT_PACKS = [
   { p: 1000, l: '1,000원' }, { p: 3000, l: '3,000원' }, { p: 5000, l: '5,000원' }, { p: 10000, l: '10,000원' },
+  { p: 20000, l: '20,000원' }, { p: 40000, l: '40,000원' },
 ];
+
+// 문제 1세트 = 300P 기준. 건수가 많을수록 1건당 가격이 내려가요 (1P = 1원).
+// quota = 기간 안에 "받을 수 있는 자료 개수" (문제+해설 묶음 1개 = 1건)
+export const DEFAULT_PLANS = [
+  { id: 'p45', name: '45일', days: 45, quota: 15, price: 3900 },
+  { id: 'p90', name: '90일', days: 90, quota: 35, price: 8400 },
+  { id: 'p180', name: '6개월', days: 180, quota: 80, price: 17600 },
+  { id: 'p365', name: '12개월', days: 365, quota: 180, price: 36000 },
+];
+export const DEFAULT_PRICE = 300;
 
 export const DEFAULT_SITE = {
   noticeOn: false,
-  autoPass: false,
-  autoApprove: true, // 민혁닷컴에서 가입하면 PyNest 도 바로 쓸 수 있게 자동 승인
+    autoApprove: true, // 민혁닷컴에서 가입하면 PyNest 도 바로 쓸 수 있게 자동 승인
   notice: '',
-  heroSub: '과목별로 엄선한 10~15문항 세트. 무료 자료는 누구나, 프리미엄은 M포인트 또는 M패스로.',
+  heroSub: '과목별로 엄선한 10~15문항 세트. 무료 자료는 누구나, 프리미엄은 300P부터 M포인트 또는 M패스로.',
   contact: CONFIG.CONTACT || '',
-  passInfo: 'M패스는 관리자가 계정(PyNest ID)을 직접 등록해줘요.\n구매·문의는 아래 연락처로 보내주세요.',
+  passInfo: 'M패스는 정해진 기간 동안 정해진 건수만큼 자료를 받을 수 있는 이용권이에요.\n한 번 받은 자료는 기간이 끝나도 계속 다시 받을 수 있어요.',
   chargeInfo: '입금 계좌: (은행) 000-0000-0000 (예금주)\n입금 후 아래 충전 신청을 보내주면 확인 뒤 포인트를 넣어드려요.',
   about: '민혁닷컴은 물리·화학·생물·지구과학 각 단원의 좋은 문제만 10~15문항씩 묶어 PDF로 제공하는 문제 은행이에요.\n직접 풀어보고 고른 문제로, 개념을 확인하고 실전 감각을 키우는 데 맞췄어요.',
   packs: DEFAULT_PACKS,
+  passPlans: DEFAULT_PLANS,
   banners: DEFAULT_BANNERS,
   menu: DEFAULT_MENU,
   menuVer: 1,

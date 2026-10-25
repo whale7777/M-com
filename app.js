@@ -1,9 +1,10 @@
-import { CONFIG } from './config.js?v=8';
-import { $, $$, esc, clone, safeColor, safeLink, num, fmtDT, fmtDate, richText, ID_RE, toast, triggerDownload, DAY, PYNEST_URL } from './util.js?v=8';
-import { DEFAULT_TAX, DEFAULT_SITE, DEFAULT_MENU } from './defaults.js?v=8';
-import { demoBackend, supabaseBackend } from './backend.js?v=8';
-import { S, subj, unitOf, created, isNew, visibleFiles, unlocked, canMain, canSol, buyable, hasPreview } from './state.js?v=8';
-import { bindAdmin, openAdmin, adminClick, openAdminNewFile, openAdminEditFile } from './admin.js?v=8';
+import { CONFIG } from './config.js?v=10';
+import { $, $$, esc, clone, safeColor, safeLink, num, fmtDT, fmtDate, richText, ID_RE, toast, triggerDownload, DAY, PYNEST_URL } from './util.js?v=10';
+import { DEFAULT_TAX, DEFAULT_SITE, DEFAULT_MENU, DEFAULT_PLANS, DEFAULT_BANNERS } from './defaults.js?v=10';
+import { demoBackend, supabaseBackend } from './backend.js?v=10';
+import { S, subj, unitOf, findUnit, unitPath, unitIds, flatUnits, created, isNew, visibleFiles, unlocked, canMain, canSol, buyable, claimable, hasPreview } from './state.js?v=10';
+import { bindAdmin, openAdmin, adminClick } from './admin.js?v=10';
+import { pencil, startEdit, cancelEdit, commitEdit, newPageHTML, afterNewPage, filePanelHTML, openFilePanel, bindEditor } from './editor.js?v=10';
 
 S.DEMO = !CONFIG.SUPABASE_URL || /여기에/.test(CONFIG.SUPABASE_URL) || new URLSearchParams(location.search).has('demo');
 const demoFlags = {};
@@ -50,7 +51,7 @@ function menuItemHTML(m) {
       const base = `#/${encodeURIComponent(s.id)}`;
       return `<details class="dr-sub" style="--c:${safeColor(s.color)}" ${open ? 'open' : ''}><summary>${esc(s.emoji)} ${esc(s.name)}</summary>
         <a class="dr-link ${open && view.u === 'all' ? 'on' : ''}" href="${base}">전체 보기</a>` +
-        (s.units || []).map((u) => `<a class="dr-link ${open && view.u === u.id ? 'on' : ''}" href="${base}/${encodeURIComponent(u.id)}">${esc(u.name)}</a>`).join('') + '</details>';
+        flatUnits(s.units).map(({ u, depth }) => `<a class="dr-link d${Math.min(depth, 3)} ${open && view.u === u.id ? 'on' : ''}" href="${base}/${encodeURIComponent(u.id)}">${esc(u.name)}</a>`).join('') + '</details>';
     }).join('');
   }
   const link = safeLink(m.link);
@@ -86,10 +87,10 @@ function coverHTML(f, big = false) {
     <em>${Number(f.count) || '-'}문항</em><u></u><u></u><u></u></div></div>`;
 }
 function priceTag(f) {
-  if (S.isAdmin) return `<span class="pt own">관리자</span>${f.price ? `<span class="pt price">🪙 ${num(f.price)}P</span>` : ''}`;
-  if (f.tier === 'free') return `<span class="pt free">무료</span>${f.hasSolution && f.price && !unlocked(f) ? `<span class="pt sub">해설 ${num(f.price)}P</span>` : ''}`;
-  if (unlocked(f)) return `<span class="pt own">${S.hasPass && !S.owned.has(f.id) ? 'M패스 이용중' : '구매함'}</span>`;
-  return Number(f.price) > 0 ? `<span class="pt price">🪙 ${num(f.price)}P</span>` : '<span class="pt pass">M패스 전용</span>';
+  if (f.tier === 'free') return '<span class="pt free">무료</span>';
+  if (S.isAdmin) return `<span class="pt own">관리자</span><span class="pt price">🪙 ${num(f.price)}P</span>`;
+  if (unlocked(f)) return '<span class="pt own">내 자료</span>';
+  return `<span class="pt price">🪙 ${num(f.price)}P</span>`;
 }
 function cardHTML(f) {
   const sj = subj(f.subject), un = unitOf(f);
@@ -128,10 +129,12 @@ async function route() {
   const { parts, q } = parseHash();
   const head = parts[0] || '';
   let cur = 'home', html = '', post = null;
-  Object.assign(view, { s: 'all', u: 'all', tier: 'all', sort: 'new', q: '' });
+  Object.assign(view, { s: 'all', u: 'all', tier: 'all', sort: 'new', q: '', mode: '' });
 
   if (head === 'f') {
     cur = 'detail'; html = detailHTML(parts[1]);
+  } else if (head === 'new') {
+    cur = 'new'; html = newPageHTML({ s: q.s, u: q.u }); post = afterNewPage;
   } else if (head === 'notices') {
     cur = 'notices'; html = parts[1] ? noticeDetailHTML(parts[1]) : noticesHTML();
   } else if (head === 'me') {
@@ -146,13 +149,14 @@ async function route() {
     cur = 'list';
     if (subj(head)) {
       view.s = head;
-      if (parts[1] && (subj(head).units || []).some((u) => u.id === parts[1])) view.u = parts[1];
+      if (parts[1] && findUnit(subj(head), parts[1])) view.u = parts[1];
+      if (q.mode === 'list') view.mode = 'list';
     }
     if (['all', 'free', 'premium'].includes(q.tier)) view.tier = q.tier;
     if (['new', 'pop', 'easy', 'hard', 'title'].includes(q.sort)) view.sort = q.sort;
     view.q = (q.q || '').slice(0, 60);
     html = listHTML();
-    post = () => { $('#tierSel').value = view.tier; $('#sortSel').value = view.sort; renderListGrid(); };
+    post = () => { if (!$('#tierSel')) return; $('#tierSel').value = view.tier; $('#sortSel').value = view.sort; renderListGrid(); };
   } else {
     html = homeHTML(); post = startCarousel;
   }
@@ -219,12 +223,12 @@ function homeHTML() {
   <section class="blk"><div class="blk-h"><h2>이렇게 이용해요</h2></div>
     <ol class="steps">
       <li><i>1</i><b>자료 고르기</b><span>과목·단원으로 찾고, 상세 페이지에서 미리보기와 구성을 확인해요.</span></li>
-      <li><i>2</i><b>받기 · 구매하기</b><span>무료는 바로 다운로드, 프리미엄은 M포인트로 구매하거나 M패스로 열어요.</span></li>
-      <li><i>3</i><b>풀고 복습하기</b><span>구매한 자료는 내 정보에서 언제든 다시 받을 수 있어요. 해설 PDF도 함께요.</span></li>
+      <li><i>2</i><b>받기 · 구매하기</b><span>무료는 바로 다운로드, 프리미엄은 M포인트로 구매하거나 M패스의 받기 건수로 가져가요.</span></li>
+      <li><i>3</i><b>풀고 복습하기</b><span>구매하거나 받은 자료는 내 정보에서 언제든 다시 받을 수 있어요. 해설 PDF도 함께요.</span></li>
     </ol></section>
 
   <section class="promo-row">
-    <a class="promo p1" href="#/pass"><span>👑</span><div><b>M패스</b><p>프리미엄 전체 자료 + 해설을 기간 동안 무제한으로</p></div><em>자세히 ›</em></a>
+    <a class="promo p1" href="#/pass"><span>👑</span><div><b>M패스</b><p>기간 안에 정해진 건수만큼, 1건당 최대 33% 저렴하게</p></div><em>자세히 ›</em></a>
     <a class="promo p2" href="#/points"><span>🪙</span><div><b>M포인트</b><p>필요한 세트만 골라서 구매. 한 번 사면 계속 받아요</p></div><em>충전하기 ›</em></a>
   </section>`;
 }
@@ -255,7 +259,7 @@ function currentList() {
     title: (a, b) => String(a.title).localeCompare(String(b.title), 'ko'),
   };
   return S.files
-    .filter((f) => (view.s === 'all' || f.subject === view.s) && (view.u === 'all' || f.unit === view.u) &&
+    .filter((f) => (view.s === 'all' || f.subject === view.s) && (view.u === 'all' || unitIds(findUnit(subj(view.s), view.u)).includes(f.unit)) &&
       (view.tier === 'all' || f.tier === view.tier) &&
       (!q || `${f.title} ${f.desc || ''} ${unitOf(f)?.name || ''} ${subj(f.subject)?.name || ''}`.toLowerCase().includes(q)))
     .sort((a, b) => (b.pinned ? 1 : 0) - (a.pinned ? 1 : 0) || sorters[view.sort](a, b));
@@ -269,29 +273,64 @@ function listHash() {
   return base + (p.toString() ? '?' + p : '');
 }
 function listHTML() {
-  const sj = subj(view.s), un = sj && (sj.units || []).find((u) => u.id === view.u);
+  const sj = subj(view.s), un = sj && findUnit(sj, view.u);
+  const folder = !!sj && view.mode !== 'list' && !view.q;
   const cnt = (pred) => S.files.filter(pred).length;
   const side = `<a class="sl ${view.s === 'all' ? 'on' : ''}" href="#/list">전체 <i>${S.files.length}</i></a>` + S.tax.map((s) => {
     const open = view.s === s.id;
     return `<div class="sg"><a class="sl ${open && view.u === 'all' ? 'on' : ''}" href="#/${encodeURIComponent(s.id)}">${esc(s.emoji)} ${esc(s.name)} <i>${cnt((f) => f.subject === s.id)}</i></a>` +
-      (open ? (s.units || []).map((u) => `<a class="sl sub ${view.u === u.id ? 'on' : ''}" href="#/${encodeURIComponent(s.id)}/${encodeURIComponent(u.id)}">${esc(u.name)} <i>${cnt((f) => f.subject === s.id && f.unit === u.id)}</i></a>`).join('') : '') + '</div>';
+      (open ? flatUnits(s.units).map(({ u, depth }) => `<a class="sl sub d${Math.min(depth, 3)} ${view.u === u.id ? 'on' : ''}" href="#/${encodeURIComponent(s.id)}/${encodeURIComponent(u.id)}">${esc(u.name)} <i>${cnt((f) => f.subject === s.id && unitIds(u).includes(f.unit))}</i></a>`).join('') : '') + '</div>';
   }).join('');
   document.title = `${sj ? sj.name + (un ? ' · ' + un.name : '') : view.q ? `'${view.q}' 검색` : '전체 자료'} — 민혁닷컴`;
-  return `<div class="crumb"><a href="#/">홈</a> › ${sj ? `<a href="#/${encodeURIComponent(sj.id)}">${esc(sj.name)}</a>` : '<span>전체 자료</span>'}${un ? ` › <span>${esc(un.name)}</span>` : ''}</div>
+  return `<div class="crumb"><a href="#/">홈</a> › ${sj ? `<a href="#/${encodeURIComponent(sj.id)}">${esc(sj.name)}</a>` : '<span>전체 자료</span>'}${unitPath(sj, view.u).map((n, i, arr) => ` › ${i === arr.length - 1 ? `<span>${esc(n.name)}</span>` : `<a href="#/${encodeURIComponent(sj.id)}/${encodeURIComponent(n.id)}">${esc(n.name)}</a>`}`).join('')}</div>
   <div class="list-layout">
-    <aside class="side"><details open><summary>과목 · 단원</summary>${side}</details></aside>
+    <aside class="side"><details ${folder ? "" : "open"}><summary>과목 · 단원</summary>${side}</details></aside>
     <div class="list-main">
       <div class="list-head"><h1>${sj ? `${esc(sj.emoji)} ${esc(sj.name)}${un ? ` <small>› ${esc(un.name)}</small>` : ''}` : view.q ? `‘${esc(view.q)}’ 검색 결과` : '전체 자료'} <span id="listCount"></span></h1>
         ${S.isAdmin && sj ? `<button class="btn primary sm" data-act="admin-new" data-s="${esc(sj.id)}" data-u="${un ? esc(un.id) : ''}" type="button">＋ ${un ? '이 단원' : '이 과목'}에 자료 올리기</button>` : ''}
-        <div class="controls">
+        ${sj ? `<a class="btn ghost sm" href="${folder ? `#/${encodeURIComponent(sj.id)}${un ? '/' + encodeURIComponent(un.id) : ''}?mode=list` : `#/${encodeURIComponent(sj.id)}${un ? '/' + encodeURIComponent(un.id) : ''}`}">${folder ? '☰ 목록으로 보기' : '📁 폴더로 보기'}</a>` : ''}
+        ${folder ? '' : `<div class="controls">
           <select id="tierSel" aria-label="등급"><option value="all">모든 자료</option><option value="free">무료</option><option value="premium">프리미엄</option></select>
           <select id="sortSel" aria-label="정렬"><option value="new">최신순</option><option value="pop">인기순</option><option value="easy">쉬운 순</option><option value="hard">어려운 순</option><option value="title">제목순</option></select>
           <input id="lq" type="search" placeholder="이 목록에서 검색" value="${esc(view.q)}">
-        </div></div>
-      <div id="listGrid"></div>
+        </div>`}</div>
+      ${folder ? folderHTML(sj, un) : '<div id="listGrid"></div>'}
     </div></div>`;
 }
+
+/* ---- 폴더형 보기: 큰 단원 › 범위 › 소단원 › 회차 칸 ---- */
+const natural = (a, b) => String(a.title).localeCompare(String(b.title), 'ko', { numeric: true });
+function tileHTML(f) {
+  const open = canMain(f);
+  const lock = f.tier === 'premium' && !unlocked(f);
+  return `<div class="tl ${lock ? 'lock' : ''} ${f.visible === false ? 'hid' : ''}"><a class="tl-t" href="#/f/${encodeURIComponent(f.id)}" title="${esc(f.title)}">${esc(f.title)}${isNew(f) ? '<em class="nw">N</em>' : ''}${f.visible === false ? '<em class="hd">숨김</em>' : ''}</a>
+    ${open ? `<button class="tl-i" data-dl="${esc(f.id)}" type="button" aria-label="다운로드">⬇</button>` : `<a class="tl-i" href="#/f/${encodeURIComponent(f.id)}" aria-label="자세히">${buyable(f) ? '🪙' : '🔒'}</a>`}</div>`;
+}
+function leafHTML(sj, u, files) {
+  const mine = files.filter((f) => f.subject === sj.id && f.unit === u.id).sort(natural);
+  return `<div class="leaf"><div class="leaf-h"><b>${esc(u.name)}</b>${S.isAdmin ? `<button class="linkbtn" data-act="admin-new" data-s="${esc(sj.id)}" data-u="${esc(u.id)}" type="button">＋ 자료</button>` : ''}</div>
+    ${mine.length ? `<div class="tiles">${mine.map(tileHTML).join('')}</div>` : '<p class="note">아직 올라온 자료가 없어요.</p>'}</div>`;
+}
+function nodeHTML(sj, u, files, depth) {
+  const kids = u.children || [];
+  if (!kids.length) return leafHTML(sj, u, files);
+  const ids = unitIds(u);
+  const n = files.filter((f) => f.subject === sj.id && ids.includes(f.unit)).length;
+  const own = files.filter((f) => f.subject === sj.id && f.unit === u.id).sort(natural);
+  return `<details class="fd fd${Math.min(depth, 3)}" open><summary><span>${esc(u.name)}</span><i>${n}</i></summary>
+    ${own.length ? `<div class="tiles own">${own.map(tileHTML).join('')}</div>` : ''}
+    <div class="fd-body">${kids.map((k) => nodeHTML(sj, k, files, depth + 1)).join('')}</div></details>`;
+}
+function folderHTML(sj, un) {
+  const files = S.files.filter((f) => f.visible !== false || S.isAdmin);
+  const nodes = un ? [un] : (sj.units || []);
+  const loose = un ? [] : files.filter((f) => f.subject === sj.id && !findUnit(sj, f.unit)).sort(natural);
+  const body = nodes.map((u) => nodeHTML(sj, u, files, 0)).join('');
+  return `<div class="folder">${body || '<p class="empty">아직 단원이 없어요. 관리자 › 과목·단원에서 폴더를 만들어줘.</p>'}
+    ${loose.length ? `<div class="leaf"><div class="leaf-h"><b>미분류</b></div><div class="tiles">${loose.map(tileHTML).join('')}</div></div>` : ''}</div>`;
+}
 function renderListGrid() {
+  if (!$('#listGrid')) return;
   const list = currentList();
   $('#listCount').textContent = `${list.length}개`;
   $('#listGrid').innerHTML = list.length ? gridOf(list) : '<p class="empty">조건에 맞는 자료가 아직 없어요 🥲<br><a href="#/list">전체 자료 보기</a></p>';
@@ -314,22 +353,23 @@ function detailHTML(id) {
     <div class="d-main">
       <div class="d-top">${coverHTML(f, true)}
         <div class="d-info">
-          <div class="c-tag" style="--c:${safeColor(sj?.color)}">${esc(sj ? sj.emoji + ' ' + sj.name : '미분류')}${un ? ' · ' + esc(un.name) : ''}</div>
-          <h1>${esc(f.title)} ${f.visible === false ? '<i class="bd hid">숨김</i>' : ''}${isNew(f) ? '<i class="bd new">NEW</i>' : ''}</h1>
-          <p class="d-desc">${esc(f.desc || '')}</p>
-          ${S.isAdmin ? `<button class="btn sm" data-act="admin-edit" data-id="${esc(f.id)}" type="button">✏️ 이 자료 수정</button>` : ''}
+          <div class="c-tag" style="--c:${safeColor(sj?.color)}"><span class="edhost" data-edhost="place" data-fid="${esc(f.id)}"><span class="edv">${esc(sj ? sj.emoji + ' ' + sj.name : '미분류')}${un ? ' · ' + esc(un.name) : ''}</span>${pencil('place', '과목·단원 바꾸기')}</span></div>
+          <h1><span class="edhost" data-edhost="title" data-fid="${esc(f.id)}"><span class="edv">${esc(f.title)}</span>${pencil('title', '제목 수정')}</span> ${f.visible === false ? '<i class="bd hid">숨김</i>' : ''}${isNew(f) ? '<i class="bd new">NEW</i>' : ''}</h1>
+          <p class="d-desc"><span class="edhost" data-edhost="desc" data-fid="${esc(f.id)}"><span class="edv">${f.desc ? esc(f.desc) : (S.isAdmin ? '<span class="dim">설명이 없어요. 연필로 추가해줘</span>' : '')}</span>${pencil('desc', '설명 수정')}</span></p>
+          ${S.isAdmin ? `<div class="adm-row"><button class="btn sm" data-adm="vis" data-id="${esc(f.id)}" type="button">${f.visible === false ? '👁 공개하기' : '🙈 숨기기'}</button><button class="btn sm" data-adm="pin" data-id="${esc(f.id)}" type="button">${f.pinned ? '📌 고정 해제' : '📌 상단 고정'}</button><button class="btn sm danger" data-adm="del" data-id="${esc(f.id)}" type="button">🗑 삭제</button></div>` : ''}
           <dl class="spec">
-            <dt>난이도</dt><dd>${lvDots(f.level)} ${LV[Math.min(3, Math.max(1, Number(f.level) || 1))]}</dd>
-            <dt>문항 수</dt><dd>${Number(f.count) || '-'}문항</dd>
+            <dt>난이도</dt><dd><span class="edhost" data-edhost="level" data-fid="${esc(f.id)}"><span class="edv">${lvDots(f.level)} ${LV[Math.min(3, Math.max(1, Number(f.level) || 1))]}</span>${pencil('level')}</span></dd>
+            <dt>문항 수</dt><dd><span class="edhost" data-edhost="count" data-fid="${esc(f.id)}"><span class="edv">${Number(f.count) || '-'}문항</span>${pencil('count')}</span></dd>
             <dt>형식</dt><dd>PDF${f.hasSolution ? ' · 해설 PDF 포함' : ''}</dd>
             <dt>등록일</dt><dd>${date}</dd>
             <dt>다운로드</dt><dd>${num(f.downloads)}회</dd>
           </dl>
         </div></div>
-      <section class="d-sec"><h2>이 자료에는</h2>
+      <section class="d-sec"><h2>이 자료에는 ${S.isAdmin ? '<button class="pencil" type="button" data-srcopen="' + esc(f.id) + '" title="파일 바꾸기" aria-label="파일 바꾸기">✏️ <small>파일 바꾸기</small></button>' : ''}</h2>
         <ul class="incl"><li>📄 <b>문제 PDF</b> — ${Number(f.count) || '-'}문항</li>
           <li>${f.hasSolution ? '📝 <b>해설 PDF</b> — 풀이 수록' : '<span class="dim">📝 해설 PDF 없음</span>'}</li>
-          <li>♾️ <b>구매 후 재다운로드</b> 무제한 (내 정보에서 확인)</li></ul></section>
+          <li>♾️ <b>구매하거나 받은 뒤 재다운로드</b> 무제한 (내 정보에서 확인)</li></ul>
+        ${S.isAdmin ? filePanelHTML(f) : ''}</section>
       <section class="d-sec"><h2>미리보기</h2>
         ${hasPreview(f) ? '<div id="prevBox" class="prev-box"><button class="btn ghost" data-act="preview" type="button">👁 샘플 문제 보기</button></div>' : '<p class="dim">등록된 미리보기가 없어요.</p>'}</section>
       ${rel.length ? `<section class="d-sec"><h2>같은 과목 다른 자료</h2>${gridOf(rel)}</section>` : ''}
@@ -339,24 +379,22 @@ function detailHTML(id) {
 }
 function buyBoxHTML(f) {
   const id = esc(f.id);
-  const priceBig = f.tier === 'free' ? '<b class="pr free">무료</b>' : Number(f.price) > 0 ? `<b class="pr">🪙 ${num(f.price)} <small>P</small></b>` : '<b class="pr pass">M패스 전용</b>';
+  const free = f.tier === 'free';
+  const priceBig = free ? '<b class="pr free">무료</b>' : `<b class="pr">🪙 ${num(f.price)} <small>P</small></b>`;
+  const priceEd = `<span class="edhost" data-edhost="price" data-fid="${id}"><span class="edv">${priceBig}</span>${pencil('price', '가격 수정')}</span>`;
   const btns = [];
   if (canMain(f)) btns.push(`<button class="btn primary lg block" data-dl="${id}" type="button">⬇ 문제 PDF 바로 다운로드</button>`);
   if (canSol(f)) btns.push(`<button class="btn ghost lg block" data-dl="${id}" data-kind="solution" type="button">📝 해설 PDF 다운로드</button>`);
-  if (buyable(f)) {
-    const label = f.tier === 'free' ? `해설 포함 구매 · ${num(f.price)}P` : `${num(f.price)}P로 구매하기`;
-    btns.push(`<button class="btn buy lg block" data-buy="${id}" type="button">🪙 ${label}</button>`);
-  } else if (!canMain(f)) {
-    btns.push('<a class="btn ghost lg block" href="#/pass">🔒 M패스가 필요한 자료예요</a>');
-  } else if (f.tier === 'free' && f.hasSolution && !canSol(f)) {
-    btns.push('<a class="btn ghost block" href="#/pass">📝 해설은 M패스 전용</a>');
-  }
+  if (buyable(f)) btns.push(`<button class="btn buy lg block" data-buy="${id}" type="button">🪙 ${num(f.price)}P로 구매하기</button>`);
+  if (claimable(f)) btns.push(`<button class="btn pass lg block" data-claim="${id}" type="button">👑 M패스로 받기 <small>(남은 ${num(S.pass.left)}건)</small></button>`);
+  else if (!unlocked(f) && S.user && S.pass.active) btns.push('<a class="btn ghost block" href="#/pass">👑 M패스 건수를 다 썼어요 · 추가 구매</a>');
+  else if (!unlocked(f)) btns.push('<a class="btn ghost block" href="#/pass">👑 M패스로 더 싸게 받기</a>');
   const me = S.user
-    ? `<div class="mypts"><span>내 포인트</span><b>🪙 ${num(S.points)} P</b><a href="#/points">충전</a></div>`
+    ? `<div class="mypts"><span>내 포인트</span><b>🪙 ${num(S.points)} P</b><a href="#/points">충전</a></div>${S.pass.active ? `<div class="mypts"><span>M패스 남은 건수</span><b>👑 ${num(S.pass.left)}건</b><a href="#/pass">보기</a></div>` : ''}`
     : '<div class="mypts"><span>구매하려면 로그인이 필요해요</span><button class="btn sm primary" data-act="login" type="button">로그인</button></div>';
-  const note = unlocked(f) ? (S.hasPass && !S.owned.has(f.id) && !S.isAdmin ? '<p class="b-note ok">👑 M패스로 이용 중이에요</p>' : S.owned.has(f.id) ? '<p class="b-note ok">✅ 구매한 자료예요. 언제든 다시 받을 수 있어요</p>' : '')
-    : (f.tier === 'premium' ? '<p class="b-note">구매하면 문제·해설 PDF를 계속 받을 수 있어요.<br>M패스가 있으면 이 자료도 추가 결제 없이 열려요.</p>' : '');
-  return `<div class="buy-box"><div class="b-price"><span>${f.tier === 'free' ? '무료 자료' : '프리미엄'}</span>${priceBig}</div>
+  const note = unlocked(f) && !free ? (S.isAdmin ? '' : '<p class="b-note ok">✅ 내 자료예요. 언제든 다시 받을 수 있어요</p>')
+    : (!free ? '<p class="b-note">구매하거나 M패스로 받으면 문제·해설 PDF를 계속 다시 받을 수 있어요.</p>' : '');
+  return `<div class="buy-box"><div class="b-price"><span>${free ? '무료 자료' : '프리미엄'}</span>${priceEd}</div>
     <div class="b-btns">${btns.join('')}</div>${note}${me}</div>`;
 }
 
@@ -376,14 +414,15 @@ async function meHTML() {
   const mine = pu.map((p) => ({ p, f: S.files.find((x) => x.id === p.fileId) })).filter((x) => x.f);
   return `<div class="page-h"><h1>내 정보</h1></div>
   <div class="me-top">
-    <div class="me-card"><span>아이디</span><b>${esc(S.user.username)}</b>${S.isAdmin ? '<i class="badge admin">ADMIN</i>' : S.hasPass ? '<i class="badge m">M PASS</i>' : '<small>M패스 없음</small>'}</div>
+    <div class="me-card"><span>아이디</span><b>${esc(S.user.username)}</b>${S.isAdmin ? '<i class="badge admin">ADMIN</i>' : S.pass.active ? '<i class="badge m">M PASS</i>' : '<small>M패스 없음</small>'}</div>
+    <div class="me-card"><span>M패스</span>${S.pass.active ? `<b>👑 ${esc(S.pass.plan || '이용중')}</b><small>남은 ${num(S.pass.left)}건 / 총 ${num(S.pass.quota)}건 · ${esc(S.pass.expires || '무기한')}까지</small>` : '<small>없음</small><a class="btn sm ghost" href="#/pass">보러가기</a>'}</div>
     <div class="me-card pts"><span>내 M포인트</span><b>🪙 ${num(S.points)} P</b><a class="btn sm primary" href="#/points">충전하기</a></div>
   </div>
-  <section class="blk"><div class="blk-h"><h2>구매한 자료 <small>${mine.length}개</small></h2></div>
+  <section class="blk"><div class="blk-h"><h2>내 자료 <small>${mine.length}개 (구매 + M패스로 받은 자료)</small></h2></div>
     ${mine.length ? `<div class="rows">${mine.map(({ p, f }) => `<div class="row-item"><a class="ri-t" href="#/f/${encodeURIComponent(f.id)}">${esc(f.title)}</a>
-      <small>${num(p.price)}P · ${fmtDT(p.at)}</small>
+      <small>${p.price > 0 ? num(p.price) + 'P 구매' : 'M패스로 받음'} · ${fmtDT(p.at)}</small>
       <span class="ri-b"><button class="btn sm primary" data-dl="${esc(f.id)}" type="button">⬇ 문제</button>${f.hasSolution ? `<button class="btn sm ghost" data-dl="${esc(f.id)}" data-kind="solution" type="button">📝 해설</button>` : ''}</span></div>`).join('')}</div>`
-      : `<p class="empty-s">${S.hasPass ? 'M패스로 이용 중이라 구매 기록이 없어요. 프리미엄 자료는 모두 받을 수 있어요.' : '아직 구매한 자료가 없어요. <a href="#/list?tier=premium">프리미엄 자료 보러가기</a>'}</p>`}</section>
+      : `<p class="empty-s">아직 구매하거나 받은 자료가 없어요. <a href="#/list?tier=premium">프리미엄 자료 보러가기</a></p>`}</section>
   <section class="blk"><div class="blk-h"><h2>포인트 내역</h2></div>
     ${led.length ? `<div class="tbl"><div class="tr th"><span>일시</span><span>구분</span><span>내용</span><span>변동</span><span>잔액</span></div>${led.map((l) =>
       `<div class="tr"><span>${fmtDT(l.at)}</span><span><i class="pill k-${l.kind}">${KIND[l.kind] || l.kind}</i></span><span>${esc(l.memo || '')}</span><span class="${l.delta >= 0 ? 'plus' : 'minus'}">${l.delta >= 0 ? '+' : ''}${num(l.delta)}</span><span>${num(l.balance_after)}</span></div>`).join('')}</div>` : '<p class="empty-s">내역이 없어요.</p>'}</section>
@@ -416,23 +455,36 @@ async function pointsHTML() {
         ${ch.length ? `<h3>최근 신청</h3><div class="rows">${ch.slice(0, 5).map((c) => `<div class="row-item"><span>${num(c.amount)} P</span><small>${fmtDT(c.at)}</small><i class="pill ${STATUS[c.status]?.[1] || ''}">${STATUS[c.status]?.[0] || c.status}</i></div>`).join('')}</div>` : ''}` : '<p class="empty-s">로그인하면 내 포인트가 보여요.</p>'}
       <h3>자주 묻는 질문</h3>
       <details><summary>포인트는 언제 들어오나요?</summary><p>입금 확인 후 관리자가 승인하면 바로 반영돼요. 관리자가 확인하는 시간에 따라 다를 수 있어요.</p></details>
-      <details><summary>구매한 자료는 계속 받을 수 있나요?</summary><p>네. 한 번 구매한 자료는 내 정보에서 언제든 다시 받을 수 있어요.</p></details>
-      <details><summary>M패스랑 뭐가 달라요?</summary><p>M패스는 기간 동안 프리미엄 전체를 열어주고, M포인트는 필요한 세트만 골라서 사는 방식이에요.</p></details>
+      <details><summary>구매하거나 받은 자료는 계속 받을 수 있나요?</summary><p>네. 한 번 구매하거나 M패스로 받은 자료는 내 정보에서 언제든 다시 받을 수 있어요. 패스 기간이 끝나도 그대로예요.</p></details>
+      <details><summary>M패스랑 뭐가 달라요?</summary><p>M패스는 정해진 기간 안에 정해진 건수만큼 자료를 받는 이용권이고, 1건당 가격이 M포인트 개별 구매보다 저렴해요. M패스도 M포인트로 구매해요.</p></details>
     </aside>
   </div>`;
 }
 
+const PER = (pl) => Math.round(pl.price / Math.max(pl.quota, 1));
+const SAVE = (pl) => Math.max(0, Math.round((1 - pl.price / Math.max(pl.quota, 1) / DEFAULT_PRICE_UI) * 100));
+const DEFAULT_PRICE_UI = 300; // 비교 기준: 문제 1세트 300P
 function passHTML() {
   document.title = 'M패스 — 민혁닷컴';
-  return `<div class="page-h"><h1>👑 M패스</h1><p>프리미엄 자료와 해설을 한 번에 열어주는 이용권이에요.</p></div>
-  ${S.hasPass ? '<div class="ok-box">✅ 지금 M패스를 이용 중이에요! 프리미엄 자료는 전부 받을 수 있어요.</div>' : ''}
+  const plans = (S.site.passPlans || []).filter((p) => p.price > 0 && p.quota > 0 && p.days > 0);
+  const cur = S.pass;
+  return `<div class="page-h"><h1>👑 M패스</h1><p>정해진 기간 안에 정해진 건수만큼 자료를 받는 이용권이에요. 낱개로 사는 것보다 1건당 더 저렴해요.</p></div>
+  ${cur.active ? `<div class="ok-box">✅ 이용 중: <b>${esc(cur.plan || 'M패스')}</b> · 남은 <b>${num(cur.left)}건</b> / 총 ${num(cur.quota)}건 · ${esc(cur.expires || '무기한')}까지<br><small>지금 또 구매하면 기간과 남은 건수가 이어져요.</small></div>` : ''}
+  <div class="plans">${plans.map((pl, i) => `<div class="plan ${i === plans.length - 1 ? 'best' : ''}">
+      ${SAVE(pl) > 0 ? `<span class="ribbon">${SAVE(pl)}% 절약</span>` : ''}
+      <h3>${esc(pl.name)}</h3>
+      <b class="plan-q">${num(pl.quota)}<small>건</small></b>
+      <div class="plan-p">🪙 ${num(pl.price)} P</div>
+      <small class="dim">1건당 ${num(PER(pl))}P · ${num(pl.days)}일</small>
+      <button class="btn ${i === plans.length - 1 ? 'primary' : 'ghost'} block" data-buypass="${esc(pl.id)}" type="button">M포인트로 구매</button>
+    </div>`).join('') || '<p class="empty-s">지금 판매 중인 M패스가 없어요.</p>'}</div>
   <div class="cmp">
     <div class="cmp-c"><h3>무료</h3><ul><li>무료 자료 다운로드</li><li>미리보기</li></ul><b>0원</b></div>
-    <div class="cmp-c"><h3>🪙 M포인트</h3><ul><li>필요한 세트만 골라 구매</li><li>구매한 자료 영구 재다운로드</li><li>해설 PDF 포함</li></ul><b>세트마다 결제</b><a class="btn ghost block" href="#/points">충전하기</a></div>
-    <div class="cmp-c best"><span class="ribbon">추천</span><h3>👑 M패스</h3><ul><li>프리미엄 전체 자료 무제한</li><li>해설 PDF 전부 포함</li><li>새로 올라오는 자료도 추가 결제 없이</li></ul><b>기간 동안 무제한</b></div>
+    <div class="cmp-c"><h3>🪙 낱개 구매</h3><ul><li>필요한 세트만 골라 구매</li><li>문제 1세트 ${DEFAULT_PRICE_UI}P (자료마다 달라요)</li><li>해설 PDF 포함</li></ul><b>세트마다 결제</b><a class="btn ghost block" href="#/points">포인트 충전</a></div>
+    <div class="cmp-c best"><span class="ribbon">추천</span><h3>👑 M패스</h3><ul><li>기간 안에 정해진 건수 받기</li><li>해설 PDF 포함 (1건 = 자료 1개)</li><li>받은 자료는 기간이 끝나도 계속 다운로드</li></ul><b>1건당 최대 ${Math.max(0, ...plans.map(SAVE))}% 절약</b></div>
   </div>
   <div class="info-box">${nl2br(S.site.passInfo)}</div>
-  <p class="note">문의: ${esc(S.site.contact || '')}</p>`;
+  <p class="note">M패스는 M포인트로 구매해요. 포인트가 부족하면 <a href="#/points">충전</a>해줘. 문의: ${esc(S.site.contact || '')}</p>`;
 }
 
 function aboutHTML() {
@@ -441,8 +493,9 @@ function aboutHTML() {
   <section class="panel"><h2>민혁닷컴은?</h2><p class="pre">${nl2br(S.site.about)}</p></section>
   <section class="panel"><h2>자료는 이렇게 받아요</h2>
     <ol class="plain"><li><b>무료 자료</b> — 상세 페이지의 다운로드 버튼을 누르면 바로 PDF가 내려받아져요.</li>
-      <li><b>프리미엄 자료</b> — M포인트로 구매하거나 M패스가 있으면 열려요. 구매한 자료는 계속 받을 수 있어요.</li>
-      <li><b>해설 PDF</b> — 해설이 있는 자료는 구매·M패스로 함께 열려요.</li></ol></section>
+      <li><b>프리미엄 자료</b> — M포인트로 구매하거나, M패스의 받기 건수를 써서 가져가요. 구매하거나 받은 자료는 계속 다시 받을 수 있어요.</li>
+      <li><b>M패스</b> — 45일·90일·6개월·12개월 중 골라 M포인트로 구매해요. 기간 안에 정해진 건수만큼 자료(문제+해설)를 받을 수 있어요.</li>
+      <li><b>해설 PDF</b> — 해설이 있는 자료는 구매하거나 받으면 함께 열려요.</li></ol></section>
   <section class="panel"><h2>계정</h2><p>PyNest에서 쓰는 ID와 비밀번호 그대로 로그인할 수 있어요. 민혁닷컴에서 가입해도 같은 계정이 만들어져요.</p></section>
   <section class="panel"><h2>문의</h2><p>${esc(S.site.contact || '')}</p></section>`;
 }
@@ -518,7 +571,7 @@ async function loadNotices() {
 async function download(id, kind) {
   const f = S.files.find((x) => x.id === id);
   if (!f) return;
-  if (kind === 'solution' ? !canSol(f) : !canMain(f)) return toast('이 자료는 구매하거나 M패스가 있어야 받을 수 있어요');
+  if (kind === 'solution' ? !canSol(f) : !canMain(f)) return toast('이 자료는 구매하거나 M패스로 받아야 다운로드할 수 있어요');
   try {
     const url = await S.api.getLink(f, kind);
     if (S.DEMO) toast('데모 모드라 실제 파일은 없어! 설정하면 바로 다운로드돼');
@@ -530,38 +583,82 @@ async function download(id, kind) {
   } catch (err) { console.error(err); toast('권한이 없거나 오류가 났어'); }
 }
 
-let buyId = null;
-function openBuy(id) {
+async function adminQuick(act, id) {
   const f = S.files.find((x) => x.id === id);
-  if (!f) return;
+  if (!f || !S.isAdmin) return;
+  try {
+    if (act === 'vis') { await S.api.patchFile(id, { visible: f.visible === false }); toast(f.visible === false ? '공개했어' : '숨겼어 (초안)'); }
+    else if (act === 'pin') { await S.api.patchFile(id, { pinned: !f.pinned }); toast(f.pinned ? '고정을 풀었어' : '상단에 고정했어'); }
+    else if (act === 'del') {
+      if (!confirm(`"${f.title}" 자료를 삭제할까?\n업로드한 파일과 구매 기록도 함께 사라져요.`)) return;
+      await S.api.deleteFile(id); await S.hooks.loadFiles(); toast('삭제했어');
+      location.hash = `#/${encodeURIComponent(f.subject)}`; return;
+    }
+    await S.hooks.reload();
+  } catch (err) { console.error(err); toast('처리 실패 (관리자 로그인 / schema.sql 확인)'); }
+}
+
+let buyCtx = null; // { mode: 'buy' | 'claim' | 'pass', id }
+function openBuy(id, mode = 'buy') {
   if (!S.user) { toast('먼저 로그인해줘'); return openAuth('login'); }
-  buyId = id;
-  const after = S.points - Number(f.price);
-  const short = -after;
-  $('#buyBody').innerHTML = `<div class="buy-item"><b>${esc(f.title)}</b><small>${f.tier === 'free' ? '해설 PDF 포함 구매' : '문제 PDF' + (f.hasSolution ? ' + 해설 PDF' : '')}</small></div>
-    <dl class="buy-calc"><dt>가격</dt><dd>${num(f.price)} P</dd><dt>내 포인트</dt><dd>${num(S.points)} P</dd><dt>구매 후</dt><dd class="${after < 0 ? 'minus' : ''}">${num(Math.max(after, 0))} P</dd></dl>
-    ${after < 0 ? `<p class="warn">포인트가 <b>${num(short)} P</b> 부족해요.</p>` : '<p class="note">구매 후에는 취소·환불이 안 돼요. (문의는 관리자에게)</p>'}`;
-  $('#buyOk').classList.toggle('hidden', after < 0);
-  $('#buyCharge').classList.toggle('hidden', after >= 0);
+  const dlg = $('#dlgBuy');
+  if (mode === 'pass') {
+    const pl = (S.site.passPlans || []).find((x) => x.id === id);
+    if (!pl) return;
+    buyCtx = { mode, id };
+    const after = S.points - Number(pl.price);
+    $('#dlgBuy h3').textContent = '👑 M패스 구매';
+    $('#buyBody').innerHTML = `<div class="buy-item"><b>M패스 ${esc(pl.name)}</b><small>${num(pl.days)}일 · ${num(pl.quota)}건 받기 (1건당 ${num(PER(pl))}P)</small></div>
+      <dl class="buy-calc"><dt>가격</dt><dd>${num(pl.price)} P</dd><dt>내 포인트</dt><dd>${num(S.points)} P</dd><dt>구매 후</dt><dd class="${after < 0 ? 'minus' : ''}">${num(Math.max(after, 0))} P</dd></dl>
+      ${after < 0 ? `<p class="warn">포인트가 <b>${num(-after)} P</b> 부족해요.</p>` : `<p class="note">${S.pass.active ? '지금 패스가 있어서 기간과 남은 건수가 이어져요. ' : ''}구매 후에는 취소·환불이 안 돼요.</p>`}`;
+    $('#buyOk').textContent = '패스 구매 확정';
+    $('#buyOk').classList.toggle('hidden', after < 0);
+    $('#buyCharge').classList.toggle('hidden', after >= 0);
+  } else {
+    const f = S.files.find((x) => x.id === id);
+    if (!f) return;
+    buyCtx = { mode, id };
+    if (mode === 'claim') {
+      $('#dlgBuy h3').textContent = '👑 M패스로 받기';
+      $('#buyBody').innerHTML = `<div class="buy-item"><b>${esc(f.title)}</b><small>문제 PDF${f.hasSolution ? ' + 해설 PDF' : ''}</small></div>
+        <dl class="buy-calc"><dt>M패스 남은 건수</dt><dd>${num(S.pass.left)}건</dd><dt>받은 뒤</dt><dd>${num(Math.max(S.pass.left - 1, 0))}건</dd></dl>
+        <p class="note">1건이 차감돼요. 한 번 받은 자료는 계속 다시 받을 수 있어요.</p>`;
+      $('#buyOk').textContent = '받기 확정';
+      $('#buyOk').classList.remove('hidden');
+      $('#buyCharge').classList.add('hidden');
+    } else {
+      const after = S.points - Number(f.price);
+      $('#dlgBuy h3').textContent = '🪙 구매하기';
+      $('#buyBody').innerHTML = `<div class="buy-item"><b>${esc(f.title)}</b><small>문제 PDF${f.hasSolution ? ' + 해설 PDF' : ''}</small></div>
+        <dl class="buy-calc"><dt>가격</dt><dd>${num(f.price)} P</dd><dt>내 포인트</dt><dd>${num(S.points)} P</dd><dt>구매 후</dt><dd class="${after < 0 ? 'minus' : ''}">${num(Math.max(after, 0))} P</dd></dl>
+        ${after < 0 ? `<p class="warn">포인트가 <b>${num(-after)} P</b> 부족해요.</p>` : '<p class="note">구매 후에는 취소·환불이 안 돼요. (문의는 관리자에게)</p>'}`;
+      $('#buyOk').textContent = '구매 확정';
+      $('#buyOk').classList.toggle('hidden', after < 0);
+      $('#buyCharge').classList.toggle('hidden', after >= 0);
+    }
+  }
   $('#buyOk').disabled = false;
-  $('#dlgBuy').showModal();
+  dlg.showModal();
 }
 async function confirmBuy() {
-  if (!buyId) return;
+  if (!buyCtx) return;
+  const { mode, id } = buyCtx;
   const btn = $('#buyOk');
   btn.disabled = true;
   try {
-    const r = await S.api.buyFile(buyId);
-    const msg = {
-      ok: '구매 완료! 🎉 이제 다운로드할 수 있어요', already: '이미 이용할 수 있는 자료예요', insufficient: '포인트가 부족해요',
-      not_for_sale: '포인트로 판매하지 않는 자료예요', not_found: '자료를 찾을 수 없어요', login: '로그인이 필요해요', blocked: '사용이 중지된 계정이에요',
-    }[r] || '구매하지 못했어요';
+    const r = await (mode === 'pass' ? S.api.buyPass(id) : mode === 'claim' ? S.api.claimFile(id) : S.api.buyFile(id));
+    const common = { login: '로그인이 필요해요', blocked: '사용이 중지된 계정이에요', not_found: mode === 'pass' ? '판매 중인 패스가 아니에요' : '자료를 찾을 수 없어요' };
+    const msg = ({
+      buy: { ok: '구매 완료! 🎉 이제 다운로드할 수 있어요', already: '이미 이용할 수 있는 자료예요', insufficient: '포인트가 부족해요', not_for_sale: '포인트로 판매하지 않는 자료예요' },
+      claim: { ok: '받았어요! 🎉 이제 다운로드할 수 있어요', already: '이미 받은 자료예요', free: '무료 자료라 바로 받을 수 있어요', no_pass: '유효한 M패스가 없어요', no_quota: 'M패스 남은 건수가 없어요' },
+      pass: { ok: 'M패스 구매 완료! 👑', insufficient: '포인트가 부족해요' },
+    }[mode][r]) || common[r] || '처리하지 못했어요';
     $('#dlgBuy').close();
     toast(msg);
     await refreshUserState();
     await route();
-  } catch (err) { console.error(err); toast('구매 중 오류가 났어요. 잠시 뒤 다시 시도해줘'); }
-  finally { btn.disabled = false; buyId = null; }
+  } catch (err) { console.error(err); toast('처리 중 오류가 났어요. 잠시 뒤 다시 시도해줘'); }
+  finally { btn.disabled = false; buyCtx = null; }
 }
 
 /* =====================================================================
@@ -629,6 +726,7 @@ function bind() {
   };
   window.addEventListener('hashchange', route);
   $('#buyOk').onclick = confirmBuy;
+  bindEditor();
   $('#buyCharge').onclick = () => { $('#dlgBuy').close(); navigate('#/points'); };
 
   // 목록 필터 (페이지가 다시 그려져도 동작하도록 위임)
@@ -664,8 +762,15 @@ function bind() {
     if (!t) return;
     const d = t.dataset;
     if (t.matches('[data-close]')) return t.closest('dialog').close();
-    if (d.act === 'admin-new') return openAdminNewFile(d.s, d.u);
-    if (d.act === 'admin-edit') return openAdminEditFile(d.id);
+    if (d.act === 'admin-new') return navigate(`#/new?s=${encodeURIComponent(d.s || '')}&u=${encodeURIComponent(d.u || '')}`);
+    if (d.ed !== undefined) return startEdit(t.closest('[data-edhost]')?.dataset.fid, d.ed, t);
+    if (d.edok !== undefined) return commitEdit(t);
+    if (d.edno !== undefined) return cancelEdit(t);
+    if (d.srcopen !== undefined) return openFilePanel(d.srcopen);
+    if (d.srcclose !== undefined) return $('#formSrc')?.classList.add('hidden');
+    if (d.adm) return adminQuick(d.adm, d.id);
+    if (d.claim !== undefined) return openBuy(d.claim, 'claim');
+    if (d.buypass !== undefined) return openBuy(d.buypass, 'pass');
     if (d.act === 'notice-new') return openNoticeForm(null);
     if (d.act === 'notice-edit') return openNoticeForm(d.id);
     if (d.act === 'notice-del') return deleteNotice(d.id);
@@ -685,7 +790,7 @@ function bind() {
     }
     if (d.dot !== undefined) { startCarousel.show?.(Number(d.dot)); clearInterval(carouselTimer); return; }
     if (d.dl !== undefined) return download(d.dl, d.kind || 'main');
-    if (d.buy !== undefined) return openBuy(d.buy);
+    if (d.buy !== undefined) return openBuy(d.buy, 'buy');
     if (d.at) { authTab = d.at; return renderAuthTab(); }
     await adminClick(e, t);
   });
@@ -701,8 +806,9 @@ async function loadFiles() {
 }
 async function refreshUserState() {
   S.hasPass = false; S.points = 0; S.owned = new Set();
+  S.pass = { active: false, left: 0, quota: 0, used: 0, expires: null, plan: '' };
   if (S.user) {
-    try { S.hasPass = await S.api.hasPass(S.user.id); } catch (e) { console.warn(e); }
+    try { S.pass = await S.api.myPass(S.user); S.hasPass = S.pass.active; } catch (e) { console.warn(e); }
     try { const st = await S.api.myState(S.user); S.points = st.points; S.owned = new Set(st.owned); } catch (e) { console.warn(e); }
   }
   renderHeader();
@@ -720,6 +826,7 @@ async function applyUser(u) {
   await route();
 }
 S.hooks.reload = async () => { await loadFiles(); await route(); };
+S.hooks.loadFiles = loadFiles;
 S.hooks.route = route;
 S.hooks.header = renderHeader;
 S.hooks.refreshUser = refreshUserState;
@@ -759,6 +866,9 @@ S.hooks.refreshUser = refreshUserState;
       const i = S.site.menu.findIndex((x) => x.link === '#/');
       S.site.menu.splice(i + 1, 0, clone(DEFAULT_MENU.find((x) => x.id === 'm_notice')));
     }
+    // 예전 M패스 배너 문구("무제한")는 새 건수제 문구로 바꿔줘요
+    (S.site.banners || []).forEach((b) => { if (b.id === 'b_pass' && /무제한/.test(b.title || '')) { const nb = DEFAULT_BANNERS.find((x) => x.id === 'b_pass'); b.title = nb.title; b.sub = nb.sub; } });
+    if (!Array.isArray(S.site.passPlans) || !S.site.passPlans.length) S.site.passPlans = clone(DEFAULT_PLANS);
     // 예전에 저장된 PyNest 배너 주소(대소문자가 틀린 기본값)는 설정 파일 주소를 따라가게 바꿔줘요
     (S.site.banners || []).forEach((b) => { if (b.id === 'b_pynest' && /^https?:\/\/whale7777\.github\.io\/pynest\/?$/.test(b.link || '')) b.link = '@pynest'; });
   } catch (e) { console.warn('meta 로드 실패 (기본값 사용)', e); }

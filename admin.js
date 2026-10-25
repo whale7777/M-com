@@ -1,6 +1,6 @@
-import { $, $$, esc, clone, uid, safeColor, fmtDate, fmtDT, num, ID_RE, toast, extractDriveId, saveBlob, move, DAY, MAX_UPLOAD_MB, fmtSize } from './util.js?v=8';
-import { S, subj, unitOf, created } from './state.js?v=8';
-import { DEFAULT_MENU } from './defaults.js?v=8';
+import { $, $$, esc, clone, uid, safeColor, fmtDate, fmtDT, num, ID_RE, toast, extractDriveId, saveBlob, move, DAY, MAX_UPLOAD_MB, fmtSize } from './util.js?v=10';
+import { S, subj, unitOf, created, flatUnits, unitIds } from './state.js?v=10';
+import { DEFAULT_MENU } from './defaults.js?v=10';
 
 let editId = null, taxDraft = null, taxDirty = false, bannerDraft = null, bannerDirty = false, menuDraft = null, menuDirty = false;
 let passCache = [], pointsCache = [], chargesCache = [], ledgerCache = [];
@@ -23,17 +23,14 @@ export async function openAdmin(startTab = 'tabDash') {
   bannerDraft = clone(S.site.banners || []); bannerDirty = false; renderBannerAdmin();
   menuDraft = clone(S.site.menu && S.site.menu.length ? S.site.menu : DEFAULT_MENU); menuDirty = false; renderMenuAdmin();
   fillSiteForm();
+  fillPassPlans();
   await Promise.all([refreshPass(), refreshPoints()]);
   switchTab(startTab);
 }
-export async function openAdminNewFile(sid, unitId) {
-  await openAdmin('tabFiles');
-  openNewFile({ s: sid, u: unitId });
-}
-export async function openAdminEditFile(id) {
-  await openAdmin('tabFiles');
-  await openEditFile(id);
-}
+// 자료 만들기/고치기는 설정 창이 아니라 자료 페이지에서 해요
+const goPage = (hash) => { $('#dlgAdmin').close?.(); location.hash = hash; };
+export const openAdminNewFile = (sid, unitId) => goPage(`#/new?s=${encodeURIComponent(sid || '')}&u=${encodeURIComponent(unitId || '')}`);
+export const openAdminEditFile = (id) => goPage(`#/f/${encodeURIComponent(id)}`);
 function switchTab(id) {
   $$('#dlgAdmin .tab').forEach((x) => x.classList.toggle('active', x.dataset.tab === id));
   $$('#dlgAdmin .tabpane').forEach((p) => p.classList.toggle('hidden', p.id !== id));
@@ -77,19 +74,11 @@ function renderDash() {
 }
 
 /* ---- 자료 관리 ---- */
-function fillSubjectSelects(keep) {
+function fillSubjectSelects() {
   const opts = S.tax.map((s) => `<option value="${esc(s.id)}">${esc(s.emoji)} ${esc(s.name)}</option>`).join('');
-  $('#fSubject').innerHTML = opts || '<option value="">(과목 없음)</option>';
-  if (keep) $('#fSubject').value = keep;
-  fillUnitSelect();
   const cur = $('#aFilter').value;
   $('#aFilter').innerHTML = '<option value="">모든 과목</option><option value="__hidden">숨김(초안)만</option><option value="__pinned">고정한 자료만</option>' + opts;
   $('#aFilter').value = cur || '';
-}
-function fillUnitSelect(selected) {
-  const sj = subj($('#fSubject').value);
-  $('#fUnit').innerHTML = '<option value="">(단원 없음)</option>' + (sj?.units || []).map((u) => `<option value="${esc(u.id)}">${esc(u.name)}</option>`).join('');
-  if (selected) $('#fUnit').value = selected;
 }
 function renderAdminFiles() {
   const q = $('#aSearch').value.trim().toLowerCase();
@@ -105,153 +94,38 @@ function renderAdminFiles() {
       <div class="item-btns">
         <button class="btn sm ${f.pinned ? 'on' : ''}" data-fpin="${id}" type="button">📌 고정</button>
         <button class="btn sm" data-fvis="${id}" type="button">${f.visible === false ? '공개하기' : '숨기기'}</button>
-        <button class="btn sm" data-fedit="${id}" type="button">수정</button>
+        <button class="btn sm" data-fedit="${id}" type="button">열어서 수정</button>
         <button class="btn sm danger" data-fdel="${id}" type="button">삭제</button>
       </div></div>`;
   }).join('') : '<p class="note">조건에 맞는 자료가 없어.</p>';
 }
-// 문제/해설/미리보기 각각 "없음 · 드라이브 링크 · 파일 업로드" 중 고르는 칸 보이기
-function syncSrc() {
-  const form = $('#formFile');
-  for (const fs of $$('fieldset.src', form)) {
-    const mode = form.elements[fs.dataset.kind + '_mode'].value;
-    $$('[data-for]', fs).forEach((el) => el.classList.toggle('hidden', el.dataset.for !== mode));
-  }
-}
-const setCur = (kind, text) => { $(`fieldset.src[data-kind=${kind}] [data-cur]`).textContent = text || ''; };
-let hadUpload = { main: false, solution: false, preview: false }; // 수정 중인 자료에 이미 올라간 파일이 있나
-
-function resetFileForm() {
-  editId = null;
-  hadUpload = { main: false, solution: false, preview: false };
-  const f = $('#formFile');
-  f.reset();
-  syncSrc();
-  ['main', 'solution', 'preview'].forEach((k) => setCur(k, ''));
-  $('#formTitle').textContent = '새 자료 등록';
-  $('#btnSaveFile').textContent = '저장';
-  $('#btnSaveFile').disabled = false;
-  fillSubjectSelects();
-  f.classList.add('hidden');
-}
-function openNewFile(pre = {}) {
-  resetFileForm();
-  const form = $('#formFile');
-  form.classList.remove('hidden');
-  if (pre.s && subj(pre.s)) { $('#fSubject').value = pre.s; fillUnitSelect(pre.u || ''); }
-  form.elements.title.focus();
-  form.scrollIntoView?.({ behavior: 'smooth', block: 'start' });
-}
-async function openEditFile(id) {
-  const f = S.files.find((x) => x.id === id);
-  if (!f) return;
-  let p = {};
-  try { p = await S.api.getPremium(id); } catch { /* 없으면 빈 값 */ }
-  const form = $('#formFile');
-  resetFileForm();
-  editId = id;
-  fillSubjectSelects(f.subject);
-  fillUnitSelect(f.unit);
-  const el = form.elements;
-  el.title.value = f.title;
-  el.level.value = String(f.level || 1);
-  el.tier.value = f.tier;
-  el.count.value = f.count || '';
-  el.price.value = f.price || 0;
-  el.visible.value = f.visible === false ? '0' : '1';
-  el.desc.value = f.desc || '';
-  hadUpload = { main: f.mainSrc === 'upload', solution: !!f.hasSolution && f.solutionSrc === 'upload', preview: f.previewSrc === 'upload' };
-  el.main_mode.value = f.mainSrc === 'upload' ? 'upload' : 'drive';
-  el.drive.value = f.mainSrc === 'upload' ? '' : ((f.tier === 'free' ? f.driveId : p.driveId) || '');
-  el.solution_mode.value = !f.hasSolution ? 'none' : f.solutionSrc === 'upload' ? 'upload' : 'drive';
-  el.solution.value = p.solutionId || '';
-  el.preview_mode.value = f.previewSrc === 'upload' ? 'upload' : f.previewId ? 'drive' : 'none';
-  el.preview.value = f.previewId || '';
-  const note = '✅ 이미 업로드된 파일이 있어요. 새 파일을 고르면 교체돼요.';
-  if (hadUpload.main) setCur('main', note);
-  if (hadUpload.solution) setCur('solution', note);
-  if (hadUpload.preview) setCur('preview', note);
-  syncSrc();
-  $('#formTitle').textContent = '자료 수정';
-  $('#btnSaveFile').textContent = '수정 저장';
-  form.classList.remove('hidden');
-  form.scrollIntoView?.({ behavior: 'smooth', block: 'start' });
-}
-
-// 한 칸(문제/해설/미리보기)의 입력을 읽어요. 문제가 있으면 {error}
-function readSrc(form, kind, label, required) {
-  const mode = form.elements[kind + '_mode'].value;
-  const linkName = { main: 'drive', solution: 'solution', preview: 'preview' }[kind];
-  if (mode === 'none') return { mode };
-  if (mode === 'drive') {
-    const id = extractDriveId(form.elements[linkName].value);
-    return id ? { mode, id } : { error: `${label} 드라이브 링크를 다시 확인해줘` };
-  }
-  const file = form.elements[kind + '_file'].files[0];
-  if (!file) return hadUpload[kind] ? { mode } : { error: `${label} 파일을 골라줘` };
-  if (!(file.type === 'application/pdf' || /\.pdf$/i.test(file.name))) return { error: `${label}는 PDF 파일만 올릴 수 있어요` };
-  if (file.size > MAX_UPLOAD_MB * 1048576) return { error: `${label} 파일이 너무 커요 (${fmtSize(file.size)} / 최대 ${MAX_UPLOAD_MB}MB)` };
-  return { mode, file };
-}
-
-async function submitFile(e) {
-  e.preventDefault();
-  const form = e.target;
-  const fd = Object.fromEntries(new FormData(form));
-  if (!fd.subject) return toast('과목을 먼저 만들어줘 (과목·단원 탭)');
-  const main = readSrc(form, 'main', '문제 PDF', true);
-  const sol = readSrc(form, 'solution', '해설 PDF');
-  const prev = readSrc(form, 'preview', '미리보기');
-  const bad = [main, sol, prev].find((x) => x.error);
-  if (bad) return toast(bad.error);
-  const price = Math.max(0, Math.min(1000000, Math.floor(Number(fd.price) || 0)));
-  const data = {
-    title: fd.title.trim(), subject: fd.subject, unit: fd.unit || '', level: Number(fd.level) || 1,
-    tier: fd.tier, count: Number(fd.count) || 0, desc: fd.desc.trim(), price, visible: fd.visible === '1',
-    mainSrc: main.mode === 'upload' ? 'upload' : 'drive',
-    hasSolution: sol.mode !== 'none', solutionSrc: sol.mode === 'upload' ? 'upload' : 'drive',
-    previewSrc: prev.mode === 'upload' ? 'upload' : 'drive', previewId: prev.mode === 'drive' ? prev.id : '',
-  };
-  const ids = { main: main.mode === 'drive' ? main.id : null, solution: sol.mode === 'drive' ? sol.id : null };
-  const up = {};
-  if (main.file) up.main = main.file;
-  if (sol.file) up.solution = sol.file;
-  if (prev.file) up.preview = prev.file;
-  const btn = $('#btnSaveFile');
-  const label = btn.textContent;
-  $('#fileErr')?.classList.add('hidden');
-  btn.disabled = true;
-  if (Object.keys(up).length) btn.textContent = '업로드 중… (창을 닫지 마세요)';
-  try {
-    if (editId) await S.api.updateFile(editId, data, ids, up);
-    else await S.api.addFile(data, ids, up);
-    const wasEdit = !!editId;
-    resetFileForm();
-    await S.hooks.reload();
-    renderAdminFiles(); renderDash();
-    toast(wasEdit ? '수정 완료 ✅' : '등록 완료! 🎉');
-  } catch (err) {
-    console.error(err);
-    btn.disabled = false; btn.textContent = label;
-    const raw = String(err?.message || err?.error || err || '').slice(0, 300);
-    let hint = 'schema.sql 전체를 다시 실행했는지, 관리자로 로그인돼 있는지 확인해줘.';
-    if (/row-level security|policy|unauthorized|403/i.test(raw)) hint = '권한 오류야. 관리자 계정인지(profiles.role=admin) 확인하고, 로그아웃 후 다시 로그인해봐. schema.sql 전체 재실행도 필요해.';
-    else if (/bucket.*not found|not found/i.test(raw)) hint = '저장소(mh-files)가 없어. schema.sql 전체를 SQL Editor에서 다시 실행해줘.';
-    else if (/column|schema cache|main_src/i.test(raw)) hint = '테이블에 새 칸이 없어. schema.sql 전체를 다시 실행해줘.';
-    else if (/size|exceed|too large|413/i.test(raw)) hint = '파일이 너무 커. 용량을 줄여서 다시 해봐.';
-    let box = $('#fileErr');
-    if (!box) { box = document.createElement('p'); box.id = 'fileErr'; box.className = 'file-err'; btn.parentNode.insertBefore(box, btn); }
-    box.textContent = `❌ 저장 실패: ${raw || '알 수 없는 오류'}\n👉 ${hint}`;
-    box.classList.remove('hidden');
-    toast('저장 실패 — 폼 아래 빨간 글씨를 확인해줘');
-  }
-}
-
 /* ---- 과목·단원 ---- */
 function markTaxDirty() {
   taxDirty = true;
   $('#btnSaveTax').disabled = false;
   $('#taxDirtyMsg').classList.remove('hidden');
+}
+function unitRows(units, path) {
+  return units.map((u, j) => {
+    const p = [...path, j].join('.');
+    return `<div class="unit-node" data-p="${p}">
+      <div class="unit-row">
+        <input data-f="uname" value="${esc(u.name)}" aria-label="폴더 이름">
+        <button class="btn sm" data-umove="up" type="button">↑</button>
+        <button class="btn sm" data-umove="down" type="button">↓</button>
+        <button class="btn sm" data-uchild type="button" title="이 안에 하위 폴더 만들기">＋하위</button>
+        <button class="btn sm danger" data-udel type="button">✕</button>
+      </div>
+      ${(u.children || []).length ? `<div class="units sub">${unitRows(u.children, [...path, j])}</div>` : ''}
+    </div>`;
+  }).join('');
+}
+// "0.2.1" 같은 위치 → 그 단원이 들어있는 배열과 번호
+function unitAt(si, p) {
+  const idx = p.split('.').map(Number);
+  let arr = taxDraft[si].units;
+  for (const i of idx.slice(0, -1)) arr = arr[i].children;
+  return { arr, i: idx[idx.length - 1], node: arr[idx[idx.length - 1]] };
 }
 function renderTaxAdmin() {
   $('#taxList').innerHTML = taxDraft.map((s, i) => `
@@ -264,13 +138,7 @@ function renderTaxAdmin() {
         <button class="btn sm" data-smove="down" type="button">↓</button>
         <button class="btn sm danger" data-sdel type="button">삭제</button>
       </div>
-      <div class="units">${(s.units || []).map((u, j) => `
-        <div class="unit-row" data-uj="${j}">
-          <input data-f="uname" value="${esc(u.name)}" aria-label="단원 이름">
-          <button class="btn sm" data-umove="up" type="button">↑</button>
-          <button class="btn sm" data-umove="down" type="button">↓</button>
-          <button class="btn sm danger" data-udel type="button">✕</button>
-        </div>`).join('')}</div>
+      <div class="units">${unitRows(s.units || [], [])}</div>
       <div class="unit-add">
         <input data-f="newunit" placeholder="새 단원 이름 (예: 천문)">
         <button class="btn sm primary" data-uadd type="button">＋ 단원</button>
@@ -290,7 +158,8 @@ async function saveTax() {
   for (const s of taxDraft) {
     s.name = s.name.trim();
     s.emoji = (s.emoji || '').trim() || '📘';
-    s.units = (s.units || []).map((u) => ({ ...u, name: u.name.trim() })).filter((u) => u.name);
+    const clean = (arr) => (arr || []).map((u) => { const c = clean(u.children); const o = { ...u, name: u.name.trim() }; if (c.length) o.children = c; else delete o.children; return o; }).filter((u) => u.name);
+    s.units = clean(s.units);
   }
   if (taxDraft.some((s) => !s.name)) return toast('이름이 빈 과목이 있어');
   try {
@@ -366,9 +235,10 @@ function renderAdminPass() {
   $('#adminPass').innerHTML = list.length ? list.map((p) => {
     const st = passStatus(p), id = esc(p.id);
     return `<div class="item"><div>${esc(p.name)} <i class="pill ${st.k}">${st.label}</i>
-      <small>${esc(p.memo || '메모 없음')} · ${p.expires ? p.expires + '까지' : '기간 제한 없음'}</small></div>
+      <small>${p.plan ? esc(p.plan) + ' · ' : ''}남은 <b>${num(Math.max((p.quota || 0) - (p.used || 0), 0))}</b>건 / 총 ${num(p.quota || 0)}건 · ${esc(p.memo || '메모 없음')} · ${p.expires ? p.expires + '까지' : '기간 제한 없음'}</small></div>
       <div class="item-btns">
-        ${p.expires ? `<button class="btn sm" data-pext="${id}" data-m="1" type="button">+1개월</button><button class="btn sm" data-pext="${id}" data-m="12" type="button">+1년</button>` : ''}
+        <button class="btn sm" data-pq="${id}" data-n="10" type="button">+10건</button>
+        ${p.expires ? `<button class="btn sm" data-pext="${id}" data-m="1" type="button">+1개월</button>` : ''}
         <button class="btn sm danger" data-prm="${id}" type="button">회수</button>
       </div></div>`;
   }).join('') : '<p class="note">M패스 보유자가 없어.</p>';
@@ -379,9 +249,22 @@ async function extendPass(id, months) {
   const d = new Date(Math.max(new Date(p.expires + 'T23:59:59').getTime(), Date.now()));
   d.setMonth(d.getMonth() + months);
   try {
-    await S.api.setPass(p.name, fmtDate(d), p.memo);
+    await S.api.setPass(p.name, fmtDate(d), p.memo, Math.max((p.quota || 0) - (p.used || 0), 0), p.plan);
     await refreshPass(); renderAdminPass(); toast(`${fmtDate(d)}까지 연장했어 ✨`);
   } catch (err) { console.error(err); toast('연장 실패'); }
+}
+async function addQuota(id, n) {
+  const p = passCache.find((x) => x.id === id);
+  if (!p) return;
+  try {
+    await S.api.setPass(p.name, p.expires || null, p.memo, Math.max((p.quota || 0) - (p.used || 0), 0) + n, p.plan);
+    await refreshPass(); renderAdminPass(); toast(`${n}건 추가했어 ✨`);
+  } catch (err) { console.error(err); toast('추가 실패'); }
+}
+function fillPassPlans() {
+  const sel = $('#passPlanSel');
+  const plans = (S.site.passPlans || []);
+  sel.innerHTML = '<option value="">(직접 입력)</option>' + plans.map((p) => `<option value="${esc(p.id)}">${esc(p.name)} · ${num(p.quota)}건 · ${num(p.days)}일</option>`).join('');
 }
 async function submitPass(e) {
   e.preventDefault();
@@ -393,7 +276,7 @@ async function submitPass(e) {
   try {
     const missing = [];
     for (const n of names) {
-      if ((await S.api.setPass(n, fd.expires || null, fd.memo.trim())) === 'not_found') missing.push(n);
+      if ((await S.api.setPass(n, fd.expires || null, fd.memo.trim(), Number(fd.quota) || 0, (S.site.passPlans || []).find((p) => p.id === fd.plan)?.name || '')) === 'not_found') missing.push(n);
     }
     e.target.reset();
     await refreshPass(); renderAdminPass();
@@ -488,10 +371,16 @@ function parsePacks(text) {
   }
   return out.slice(0, 8);
 }
+const plansToText = (arr) => (arr || []).map((p) => `${p.id} | ${p.name} | ${p.days} | ${p.quota} | ${p.price}`).join('\n');
+function parsePlans(text) {
+  const seen = new Set();
+  return String(text || '').split('\n').map((l) => l.split('|').map((x) => x.trim())).filter((c) => c.length >= 5).map((c) => ({
+    id: c[0].replace(/[^a-zA-Z0-9_-]/g, '').slice(0, 20), name: c[1].slice(0, 20), days: Math.floor(Number(c[2])), quota: Math.floor(Number(c[3])), price: Math.floor(Number(c[4])),
+  })).filter((p) => p.id && p.name && p.days > 0 && p.quota > 0 && p.price > 0 && !seen.has(p.id) && seen.add(p.id));
+}
 function fillSiteForm() {
   const f = $('#formSite').elements;
   f.noticeOn.checked = !!S.site.noticeOn;
-  f.autoPass.checked = !!S.site.autoPass;
   f.autoApprove.checked = S.site.autoApprove !== false;
   f.notice.value = S.site.notice || '';
   f.heroSub.value = S.site.heroSub || '';
@@ -499,6 +388,7 @@ function fillSiteForm() {
   f.passInfo.value = S.site.passInfo || '';
   f.chargeInfo.value = S.site.chargeInfo || '';
   f.packs.value = packsToText(S.site.packs);
+  f.passPlans.value = plansToText(S.site.passPlans);
   f.about.value = S.site.about || '';
 }
 async function submitSite(e) {
@@ -506,8 +396,10 @@ async function submitSite(e) {
   const f = e.target.elements;
   const packs = parsePacks(f.packs.value);
   if (f.packs.value.trim() && !packs.length) return toast('충전 상품 형식을 확인해줘 (예: 1000 | 1,000원)');
+  const plans = parsePlans(f.passPlans.value);
+  if (f.passPlans.value.trim() && !plans.length) return toast('M패스 플랜 형식을 확인해줘 (예: p45 | 45일 | 45 | 15 | 3900)');
   const next = {
-    ...S.site, noticeOn: f.noticeOn.checked, autoPass: f.autoPass.checked, autoApprove: f.autoApprove.checked, notice: f.notice.value.trim(), heroSub: f.heroSub.value.trim(),
+    ...S.site, passPlans: plans.length ? plans : S.site.passPlans, noticeOn: f.noticeOn.checked, autoApprove: f.autoApprove.checked, notice: f.notice.value.trim(), heroSub: f.heroSub.value.trim(),
     contact: f.contact.value.trim(), passInfo: f.passInfo.value.trim(), chargeInfo: f.chargeInfo.value.trim(), about: f.about.value.trim(), packs,
   };
   try { await S.api.saveSite(next); S.site = next; await S.hooks.route(); toast('설정 저장 완료 ✨'); }
@@ -523,12 +415,7 @@ async function exportBackup() {
 
 /* ---- 이벤트 ---- */
 export function bindAdmin() {
-  $('#btnNewFile').onclick = () => openNewFile();
-  $('#maxMb').textContent = MAX_UPLOAD_MB;
-  $('#formFile').addEventListener('change', (e) => { if (e.target.type === 'radio') syncSrc(); });
-  $('#btnCancelFile').onclick = resetFileForm;
-  $('#fSubject').onchange = () => fillUnitSelect();
-  $('#formFile').onsubmit = submitFile;
+  $('#btnNewFile').onclick = () => openAdminNewFile('', '');
   $('#aSearch').oninput = renderAdminFiles;
   $('#aFilter').onchange = renderAdminFiles;
 
@@ -544,7 +431,7 @@ export function bindAdmin() {
     const el = e.target, f = el.dataset.f;
     if (!f || f === 'newunit') return;
     const s = taxDraft[+el.closest('.tax-card').dataset.si];
-    if (f === 'uname') s.units[+el.closest('.unit-row').dataset.uj].name = el.value;
+    if (f === 'uname') unitAt(+el.closest('.tax-card').dataset.si, el.closest('.unit-node').dataset.p).node.name = el.value;
     else s[f] = el.value;
     markTaxDirty();
   });
@@ -580,6 +467,13 @@ export function bindAdmin() {
   $('#formPoints').onsubmit = submitPoints;
   $('#pSearch').oninput = renderAdminPass;
   $('#formPass').onsubmit = submitPass;
+  $('#passPlanSel').onchange = (e) => {
+    const pl = (S.site.passPlans || []).find((p) => p.id === e.target.value);
+    const f = $('#formPass').elements;
+    if (!pl) return;
+    f.expires.value = fmtDate(new Date(Date.now() + pl.days * DAY));
+    f.quota.value = pl.quota;
+  };
   $('#formSite').onsubmit = submitSite;
   $('#btnExport').onclick = exportBackup;
 }
@@ -588,6 +482,7 @@ export function bindAdmin() {
 export async function adminClick(e, t) {
   const d = t.dataset;
   if (d.tab) { switchTab(d.tab); return true; }
+  if (d.pq !== undefined) { await addQuota(d.pq, Number(d.n) || 10); return true; }
   if (d.fpin !== undefined) {
     const f = S.files.find((x) => x.id === d.fpin);
     await S.api.patchFile(f.id, { pinned: !f.pinned }); f.pinned = !f.pinned;
@@ -599,7 +494,7 @@ export async function adminClick(e, t) {
     await S.api.patchFile(f.id, { visible: next }); f.visible = next;
     renderAdminFiles(); S.hooks.route(); toast(next ? '공개했어' : '숨겼어'); return true;
   }
-  if (d.fedit !== undefined) { await openEditFile(d.fedit); return true; }
+  if (d.fedit !== undefined) { openAdminEditFile(d.fedit); return true; }
   if (d.fdel !== undefined) {
     if (!confirm('정말 삭제할까? (되돌릴 수 없어. 이 자료의 구매 기록도 같이 지워져)')) return true;
     await S.api.deleteFile(d.fdel); await S.hooks.reload(); renderAdminFiles(); renderDash(); toast('삭제했어'); return true;
@@ -615,11 +510,22 @@ export async function adminClick(e, t) {
       taxDraft.splice(si, 1); markTaxDirty(); renderTaxAdmin(); return true;
     }
     if (t.matches('[data-uadd]')) { addUnit(card); return true; }
-    const row = t.closest('.unit-row');
-    if (row) {
-      const uj = +row.dataset.uj;
-      if (d.umove) { if (move(s.units, uj, d.umove)) { markTaxDirty(); renderTaxAdmin(); } return true; }
-      if (t.matches('[data-udel]')) { s.units.splice(uj, 1); markTaxDirty(); renderTaxAdmin(); return true; }
+    const row = t.closest('.unit-node');
+    if (row && (d.umove || t.matches('[data-udel],[data-uchild]'))) {
+      const { arr, i, node } = unitAt(si, row.dataset.p);
+      if (d.umove) { if (move(arr, i, d.umove)) { markTaxDirty(); renderTaxAdmin(); } return true; }
+      if (t.matches('[data-uchild]')) {
+        node.children = node.children || [];
+        node.children.push({ id: uid('u'), name: '새 폴더' });
+        markTaxDirty(); renderTaxAdmin();
+        const el = $(`#taxList .tax-card[data-si="${si}"] .unit-node[data-p="${row.dataset.p}.${node.children.length - 1}"] [data-f=uname]`);
+        if (el) { el.focus(); el.select(); }
+        return true;
+      }
+      const ids = unitIds(node);
+      const n = S.files.filter((f) => f.subject === s.id && ids.includes(f.unit)).length;
+      if (!confirm(`"${node.name}"${ids.length > 1 ? ' 폴더와 그 안의 하위 폴더' : ''}를 삭제할까?${n ? `\n이 안의 자료 ${n}개는 "미분류"로 남아.` : ''}\n(저장 버튼을 눌러야 반영돼)`)) return true;
+      arr.splice(i, 1); markTaxDirty(); renderTaxAdmin(); return true;
     }
   }
 

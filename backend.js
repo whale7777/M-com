@@ -1,5 +1,5 @@
-import { DAY, clone, fmtDate, driveDownloadUrl, drivePreviewUrl } from './util.js?v=8';
-import { DEFAULT_TAX, DEFAULT_SITE, buildPrem } from './defaults.js?v=8';
+import { DAY, clone, fmtDate, driveDownloadUrl, drivePreviewUrl } from './util.js?v=10';
+import { DEFAULT_TAX, DEFAULT_SITE, buildPrem } from './defaults.js?v=10';
 
 const must = ({ data, error }) => { if (error) throw error; return data; };
 
@@ -20,7 +20,7 @@ export function demoBackend(flags = {}) {
     mk('physics', 'em', 'premium', 2, '전기장과 전위 표준 12제', '전기력선·등전위선 자료 해석.', 12, { price: 300 }),
     mk('chem', 'stoich', 'free', 1, '몰 농도·화학량론 기본 10제', '계산 실수를 줄이는 단위 정리 중심.', 10),
     mk('chem', 'acid', 'premium', 3, '산염기 적정 곡선 심화 13제', '그래프 추론형 문항 위주.', 13, { hasSolution: true, price: 500 }),
-    mk('bio', 'metab', 'free', 2, '세포 호흡 · 광합성 핵심 10제', '자료 해석형 문제로 구성.', 10, { hasSolution: true, price: 200 }),
+    mk('bio', 'metab', 'free', 2, '세포 호흡 · 광합성 핵심 10제', '자료 해석형 문제로 구성.', 10, { hasSolution: true }),
     mk('bio', 'genetic', 'premium', 3, '가계도 분석 · 유전 확률 심화 12제', '경우의 수 처리까지 한 번에.', 12, { price: 400 }),
     mk('earth', 'atmo', 'premium', 2, '대기와 해양 순환 심화 12제', '자료 분석 · 추론 유형.', 12, { price: 300 }),
     mk('earth', 'astro', 'free', 2, '별의 물리량과 H-R도 10제', '천문 단원 기본 자료해석.', 10),
@@ -30,12 +30,20 @@ export function demoBackend(flags = {}) {
   files.forEach((f) => { prem[f.id] = buildPrem(f.tier, { main: 'DEMO', solution: f.hasSolution ? 'DEMO' : null }); });
   const meta = { tax: clone(DEFAULT_TAX), site: clone(DEFAULT_SITE) };
   let mpass = [
-    { id: 'u1', name: 'student01', expires: null, memo: '예시 학생 (무기한)', active: true },
-    { id: 'u2', name: 'soon01', expires: fmtDate(new Date(Date.now() + 4 * DAY)), memo: '곧 만료 예시', active: true },
+    { id: 'u1', name: 'student01', expires: fmtDate(new Date(Date.now() + 30 * DAY)), memo: '예시 학생', active: true, quota: 15, used: 4, plan: '45일' },
+    { id: 'u2', name: 'soon01', expires: fmtDate(new Date(Date.now() + 4 * DAY)), memo: '곧 만료 예시', active: true, quota: 35, used: 30, plan: '90일' },
   ];
+  const dpass = { id: 'dp', name: 'demo_user', expires: fmtDate(new Date(Date.now() + 30 * DAY)), memo: '데모', active: true, quota: 15, used: 2, plan: '45일' };
+  const todayStr = () => fmtDate(new Date());
+  const passOf = (name) => (flags.pass && name === 'demo_user' ? dpass : mpass.find((p) => p.name === name));
+  const passInfo = (p) => {
+    const act = !!p && p.active && (!p.expires || p.expires >= todayStr());
+    return { active: act, left: act ? Math.max((p.quota || 0) - (p.used || 0), 0) : 0, quota: p ? p.quota || 0 : 0, used: p ? p.used || 0 : 0, expires: p ? p.expires : null, plan: p ? p.plan || '' : '' };
+  };
   // 포인트 (데모 로그인 사용자 기준)
   const pts = { demo_user: 700, student01: 1500 };
   const owned = new Set();
+  const paid = {}; // 자료별로 낸 포인트 (M패스로 받은 건 0)
   let ledger = [{ id: 1, username: 'demo_user', delta: 1000, balance_after: 1000, kind: 'charge', memo: '충전 승인 예시', at: now - 5 * DAY, fileId: null }];
   let charges = [
     { id: 'c1', username: 'student01', amount: 3000, depositor: '김학생', status: 'pending', at: now - 3600e3 },
@@ -65,6 +73,7 @@ export function demoBackend(flags = {}) {
     saveSite: async (s) => { meta.site = clone(s); },
     listFiles: async (admin) => clone(files.filter((f) => admin || f.visible !== false)),
     hasPass: async () => !!flags.pass,
+    myPass: async () => passInfo(cur ? passOf(cur.username) : null),
     myState: async () => ({ points: cur ? pts[cur.username] || 0 : 0, owned: [...owned] }),
     getDriveId: async () => 'DEMO',
     getPremium: async (id) => clone(prem[id] || {}),
@@ -72,18 +81,48 @@ export function demoBackend(flags = {}) {
       const f = find(id);
       if (!cur) return 'login';
       if (!f || f.visible === false) return 'not_found';
-      if (flags.pass || owned.has(id)) return 'already';
+      if (owned.has(id)) return 'already';
       if (!(f.price > 0)) return 'not_for_sale';
       const bal = pts[cur.username] || 0;
       if (bal < f.price) return 'insufficient';
       pts[cur.username] = bal - f.price;
-      owned.add(id);
+      owned.add(id); paid[id] = f.price;
       log(cur.username, -f.price, 'purchase', f.title, id);
+      return 'ok';
+    },
+    claimFile: async (id) => {
+      const f = find(id);
+      if (!cur) return 'login';
+      if (!f || f.visible === false) return 'not_found';
+      if (f.tier === 'free') return 'free';
+      if (owned.has(id)) return 'already';
+      const p = passOf(cur.username), pi = passInfo(p);
+      if (!pi.active) return 'no_pass';
+      if (pi.left <= 0) return 'no_quota';
+      p.used = (p.used || 0) + 1;
+      owned.add(id); paid[id] = 0;
+      return 'ok';
+    },
+    buyPass: async (planId) => {
+      if (!cur) return 'login';
+      const pl = (meta.site.passPlans || []).find((x) => x.id === planId);
+      if (!pl) return 'not_found';
+      const bal = pts[cur.username] || 0;
+      if (bal < pl.price) return 'insufficient';
+      pts[cur.username] = bal - pl.price;
+      log(cur.username, -pl.price, 'purchase', 'M패스 ' + pl.name, null);
+      const ex = passOf(cur.username);
+      const base = ex && passInfo(ex).active ? new Date(ex.expires || Date.now()) : new Date();
+      const exp = fmtDate(new Date(base.getTime() + pl.days * DAY));
+      const left = ex ? passInfo(ex).left : 0;
+      const row = { id: 'u' + Date.now(), name: cur.username, expires: exp, memo: 'M포인트 구매', active: true, quota: left + pl.quota, used: 0, plan: pl.name };
+      if (ex) Object.assign(ex, row, { id: ex.id }); else mpass.push(row);
+      if (flags.pass && cur.username === 'demo_user') Object.assign(dpass, row, { id: 'dp' });
       return 'ok';
     },
     myLedger: async () => clone(ledger.filter((l) => cur && l.username === cur.username)),
     myCharges: async () => clone(charges.filter((c) => cur && c.username === cur.username)),
-    myPurchases: async () => files.filter((f) => owned.has(f.id)).map((f) => ({ fileId: f.id, price: f.price, at: Date.now() })),
+    myPurchases: async () => files.filter((f) => owned.has(f.id)).map((f) => ({ fileId: f.id, price: paid[f.id] ?? f.price, at: Date.now() })),
     requestCharge: async (amount, depositor) => {
       if (!cur) return 'login';
       if (!(amount >= 1 && amount <= 1000000)) return 'invalid';
@@ -110,11 +149,12 @@ export function demoBackend(flags = {}) {
     countDownload: async (id) => { const f = find(id); if (f) f.downloads = (f.downloads || 0) + 1; },
 
     listPass: async () => clone(mpass),
-    setPass: async (name, expires, memo) => {
+    setPass: async (name, expires, memo, quota = 0, plan = '') => {
       if (name === 'nobody') return 'not_found';
       const ex = mpass.find((p) => p.name === name);
-      if (ex) Object.assign(ex, { expires, memo: memo || '', active: true });
-      else mpass.push({ id: 'u' + Date.now() + mpass.length, name, expires, memo: memo || '', active: true });
+      const row = { expires, memo: memo || '', active: true, quota: Math.max(0, Number(quota) || 0), used: 0, plan: plan || '' };
+      if (ex) Object.assign(ex, row);
+      else mpass.push({ id: 'u' + Date.now() + mpass.length, name, ...row });
       return 'ok';
     },
     removePass: async (id) => { mpass = mpass.filter((p) => p.id !== id); },
@@ -211,6 +251,14 @@ export function supabaseBackend(sb) {
 
     listFiles: async () => must(await sb.from('mh_files').select('*')).map(fromRow), // 숨김 자료는 서버가 관리자에게만 줌
     hasPass: async () => (await rpc('mh_has_pass')) === true,
+    myPass: async (u) => {
+      const r = must(await sb.from('mh_pass').select('*').eq('user_id', u.id).maybeSingle());
+      const today = new Date(Date.now() + 9 * 3600e3).toISOString().slice(0, 10); // 한국 날짜
+      const act = !!r && r.active && (!r.expires || r.expires >= today);
+      return { active: act, left: act ? Math.max((r.quota || 0) - (r.used || 0), 0) : 0, quota: r ? r.quota || 0 : 0, used: r ? r.used || 0 : 0, expires: r ? r.expires : null, plan: r ? r.plan || '' : '' };
+    },
+    claimFile: (id) => rpc('mh_claim_file', { p_file: id }),
+    buyPass: (planId) => rpc('mh_buy_pass', { p_plan: planId }),
     myState: async (u) => {
       const p = must(await sb.from('mh_points').select('balance').eq('user_id', u.id).maybeSingle());
       const o = must(await sb.from('mh_purchases').select('file_id').eq('user_id', u.id));
@@ -287,8 +335,8 @@ export function supabaseBackend(sb) {
     countDownload: async (id) => { try { await sb.rpc('mh_count_download', { p_id: id }); } catch { /* 통계라서 무시 */ } },
 
     listPass: async () => must(await sb.from('mh_pass').select('*').order('username'))
-      .map((r) => ({ id: r.user_id, name: r.username, active: r.active, expires: r.expires, memo: r.memo })),
-    setPass: (name, expires, memo) => rpc('mh_grant_pass', { p_username: name, p_expires: expires || null, p_memo: memo || '' }),
+      .map((r) => ({ id: r.user_id, name: r.username, active: r.active, expires: r.expires, memo: r.memo, quota: r.quota || 0, used: r.used || 0, plan: r.plan || '' })),
+    setPass: (name, expires, memo, quota = 0, plan = '') => rpc('mh_grant_pass', { p_username: name, p_expires: expires || null, p_memo: memo || '', p_quota: Math.max(0, Number(quota) || 0), p_plan: plan || '' }),
     removePass: async (id) => { must(await sb.from('mh_pass').delete().eq('user_id', id)); },
 
     listPoints: async () => must(await sb.from('mh_points').select('*').order('username')).map((r) => ({ id: r.user_id, username: r.username, balance: r.balance })),

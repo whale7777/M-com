@@ -8,7 +8,7 @@
 <meta name="description" content="물리·화학·생물·지구과학 엄선 문제 PDF">
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.min.css">
 <style>.drawer{position:fixed;top:0;bottom:0;left:0;width:300px;max-width:84vw;transform:translateX(-102%);visibility:hidden;background:#fff;z-index:100}.drawer.open{transform:none;visibility:visible}.drawer-bg{position:fixed;inset:0;visibility:hidden;z-index:90}.drawer-bg.open{visibility:visible}</style>
-<link rel="stylesheet" href="style.css?v=8">
+<link rel="stylesheet" href="style.css?v=10">
 </head>
 <body>
 <div id="notice" class="notice hidden"></div>
@@ -123,68 +123,6 @@
       <input id="aSearch" type="search" placeholder="자료 검색">
       <select id="aFilter"></select>
     </div>
-    <form id="formFile" class="form card-form hidden">
-      <h4 id="formTitle">새 자료 등록</h4>
-      <label>제목<input name="title" required placeholder="예) 역학적 에너지 보존 심화 12제"></label>
-      <div class="row">
-        <label>과목<select name="subject" id="fSubject"></select></label>
-        <label>단원<select name="unit" id="fUnit"></select></label>
-        <label>난이도
-          <select name="level"><option value="1">● 기본</option><option value="2">●● 표준</option><option value="3">●●● 심화</option></select>
-        </label>
-      </div>
-      <div class="row">
-        <label>등급
-          <select name="tier"><option value="free">무료</option><option value="premium">프리미엄 (구매 / M패스)</option></select>
-        </label>
-        <label>M포인트 가격
-          <input name="price" type="number" min="0" max="1000000" step="1" value="0">
-        </label>
-        <label>문항 수<input name="count" type="number" min="1" max="99" value="12"></label>
-        <label>공개 상태
-          <select name="visible"><option value="1">공개</option><option value="0">숨김 (초안)</option></select>
-        </label>
-      </div>
-      <p class="note" style="margin-top:0">M포인트 가격 <b>0</b> = 포인트로 판매 안 함 (프리미엄이면 <b>M패스 전용</b>). 무료 자료에 가격을 넣으면 <b>해설 PDF 판매가</b>가 돼요.</p>
-      <label>설명<textarea name="desc" rows="2" placeholder="어떤 단원/난이도인지 한두 줄"></textarea></label>
-      <fieldset class="src" data-kind="main">
-        <legend>📄 문제 PDF</legend>
-        <div class="seg">
-          <label><input type="radio" name="main_mode" value="drive" checked> 드라이브 링크</label>
-          <label><input type="radio" name="main_mode" value="upload"> 파일 업로드</label>
-        </div>
-        <input name="drive" data-for="drive" placeholder="https://drive.google.com/file/d/..../view">
-        <input name="main_file" data-for="upload" type="file" accept="application/pdf,.pdf" class="hidden">
-        <small class="note" data-cur></small>
-      </fieldset>
-      <fieldset class="src" data-kind="solution">
-        <legend>📝 해설 PDF <small>(선택 · 구매자 / M패스 보유자만 받을 수 있음)</small></legend>
-        <div class="seg">
-          <label><input type="radio" name="solution_mode" value="none" checked> 없음</label>
-          <label><input type="radio" name="solution_mode" value="drive"> 드라이브 링크</label>
-          <label><input type="radio" name="solution_mode" value="upload"> 파일 업로드</label>
-        </div>
-        <input name="solution" data-for="drive" class="hidden" placeholder="https://drive.google.com/file/d/..../view">
-        <input name="solution_file" data-for="upload" type="file" accept="application/pdf,.pdf" class="hidden">
-        <small class="note" data-cur></small>
-      </fieldset>
-      <fieldset class="src" data-kind="preview">
-        <legend>👁 미리보기 <small>(선택 · 샘플 1~2문제 PDF · 누구나 볼 수 있으니 팔 내용은 넣지 마세요)</small></legend>
-        <div class="seg">
-          <label><input type="radio" name="preview_mode" value="none" checked> 없음</label>
-          <label><input type="radio" name="preview_mode" value="drive"> 드라이브 링크</label>
-          <label><input type="radio" name="preview_mode" value="upload"> 파일 업로드</label>
-        </div>
-        <input name="preview" data-for="drive" class="hidden" placeholder="https://drive.google.com/file/d/..../view">
-        <input name="preview_file" data-for="upload" type="file" accept="application/pdf,.pdf" class="hidden">
-        <small class="note" data-cur></small>
-      </fieldset>
-      <p class="note">드라이브 링크는 공유 설정을 <b>"링크가 있는 모든 사용자 – 뷰어"</b>로 해둬야 해요. 직접 업로드는 PDF만, 파일당 <span id="maxMb">10</span>MB까지이고 Supabase 저장공간(무료 1GB)을 써요. 용량이 걱정되면 드라이브 링크를 쓰세요.</p>
-      <div class="row">
-        <button class="btn primary" type="submit" id="btnSaveFile">저장</button>
-        <button class="btn ghost" type="button" id="btnCancelFile">취소</button>
-      </div>
-    </form>
     <div id="adminFiles" class="list"></div>
   </div>
 
@@ -229,9 +167,13 @@
       <label>PyNest ID (여러 명이면 줄바꿈 또는 쉼표로 구분)
         <textarea name="names" rows="2" required placeholder="student01&#10;student02"></textarea>
       </label>
-      <p class="note" style="margin-top:0">가입된 ID만 부여할 수 있어요. M패스는 프리미엄 자료·해설을 <b>전부</b> 열어줘요.</p>
+      <p class="note" style="margin-top:0">가입된 ID만 부여할 수 있어요. 플랜을 고르면 만료일과 건수가 자동으로 채워지고, 직접 고쳐도 돼요. (부여하면 사용 건수는 0부터 다시 시작해요)</p>
       <div class="row">
+        <label>플랜<select name="plan" id="passPlanSel"></select></label>
         <label>만료일 (비우면 무기한)<input name="expires" type="date"></label>
+        <label>받을 수 있는 건수<input name="quota" type="number" min="0" max="9999" step="1" value="0"></label>
+      </div>
+      <div class="row">
         <label class="grow">메모 (이름·반 등)<input name="memo" placeholder="예) 3반 김철수"></label>
         <button class="btn primary" type="submit">M패스 부여</button>
       </div>
@@ -266,13 +208,13 @@
   <div id="tabSite" class="tabpane hidden">
     <form id="formSite" class="form card-form">
       <label class="check"><input type="checkbox" name="autoApprove"> 민혁닷컴에서 가입한 사람은 PyNest 도 바로 사용 가능 (PyNest 자동 승인) — ⚠️ 끄면 PyNest 는 선생님이 승인해야 해요</label>
-      <label class="check"><input type="checkbox" name="autoPass"> PyNest에서 승인된 학생은 자동으로 M패스 (프리미엄·해설 전체 열림)</label>
       <label class="check"><input type="checkbox" name="noticeOn"> 상단 띠 공지 표시</label>
       <label>상단 띠 공지 내용 (모든 페이지 맨 위에 한 줄로 떠요 — 긴 공지는 📢 공지사항 메뉴에서 쓰세요)<textarea name="notice" rows="2" placeholder="예) 11월 모의고사 세트 업로드 완료!"></textarea></label>
       <label>메인 소개 문구<input name="heroSub"></label>
       <label>문의 / 연락처 (푸터와 안내 페이지에 표시)<input name="contact" placeholder="카톡 오픈채팅 링크, 인스타, 메일 등"></label>
       <label>M패스 안내 (가격·구매 방법 등)<textarea name="passInfo" rows="3"></textarea></label>
       <label>M포인트 입금 안내 (계좌·방법)<textarea name="chargeInfo" rows="3"></textarea></label>
+      <label>M패스 플랜 (한 줄에 하나: 코드 | 이름 | 기간(일) | 받을 건수 | 가격(P))<textarea name="passPlans" rows="5" placeholder="p45 | 45일 | 45 | 15 | 3900"></textarea></label>
       <label>충전 상품 (한 줄에 하나: 포인트 | 표시할 금액)<textarea name="packs" rows="4" placeholder="1000 | 1,000원&#10;3000 | 3,000원"></textarea></label>
       <label>민혁닷컴 소개 (이용안내 페이지 · 푸터)<textarea name="about" rows="4"></textarea></label>
       <button class="btn primary" type="submit">설정 저장</button>
@@ -286,6 +228,6 @@
 </dialog>
 
 <div id="toast" class="toast"></div>
-<script type="module" src="app.js?v=8"></script>
+<script type="module" src="app.js?v=10"></script>
 </body>
 </html>

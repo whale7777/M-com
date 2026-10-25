@@ -1,4 +1,4 @@
-import { CONFIG } from './config.js?v=8';
+import { CONFIG } from './config.js?v=10';
 export const DAY = 864e5;
 // config.js 가 예전 버전이어도 동작하도록 기본 주소를 같이 둬요 (주소는 대소문자 구분!)
 export const PYNEST_URL = CONFIG.PYNEST_URL || 'https://whale7777.github.io/PYNEST/';
