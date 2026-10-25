@@ -1,9 +1,9 @@
-import { CONFIG } from './config.js?v=5';
-import { $, $$, esc, clone, safeColor, safeLink, num, fmtDT, ID_RE, toast, triggerDownload, DAY, PYNEST_URL } from './util.js?v=5';
-import { DEFAULT_TAX, DEFAULT_SITE, DEFAULT_MENU } from './defaults.js?v=5';
-import { demoBackend, supabaseBackend } from './backend.js?v=5';
-import { S, subj, unitOf, created, isNew, visibleFiles, unlocked, canMain, canSol, buyable } from './state.js?v=5';
-import { bindAdmin, openAdmin, adminClick } from './admin.js?v=5';
+import { CONFIG } from './config.js?v=6';
+import { $, $$, esc, clone, safeColor, safeLink, num, fmtDT, ID_RE, toast, triggerDownload, DAY, PYNEST_URL } from './util.js?v=6';
+import { DEFAULT_TAX, DEFAULT_SITE, DEFAULT_MENU } from './defaults.js?v=6';
+import { demoBackend, supabaseBackend } from './backend.js?v=6';
+import { S, subj, unitOf, created, isNew, visibleFiles, unlocked, canMain, canSol, buyable } from './state.js?v=6';
+import { bindAdmin, openAdmin, adminClick } from './admin.js?v=6';
 
 S.DEMO = !CONFIG.SUPABASE_URL || /여기에/.test(CONFIG.SUPABASE_URL) || new URLSearchParams(location.search).has('demo');
 const demoFlags = {};

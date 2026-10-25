@@ -1,6 +1,6 @@
-import { $, $$, esc, clone, uid, safeColor, fmtDate, fmtDT, num, ID_RE, toast, extractDriveId, saveBlob, move, DAY } from './util.js?v=5';
-import { S, subj, unitOf, created } from './state.js?v=5';
-import { DEFAULT_MENU } from './defaults.js?v=5';
+import { $, $$, esc, clone, uid, safeColor, fmtDate, fmtDT, num, ID_RE, toast, extractDriveId, saveBlob, move, DAY } from './util.js?v=6';
+import { S, subj, unitOf, created } from './state.js?v=6';
+import { DEFAULT_MENU } from './defaults.js?v=6';
 
 let editId = null, taxDraft = null, taxDirty = false, bannerDraft = null, bannerDirty = false, menuDraft = null, menuDirty = false;
 let passCache = [], pointsCache = [], chargesCache = [], ledgerCache = [];
