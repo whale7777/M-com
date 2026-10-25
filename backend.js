@@ -1,5 +1,5 @@
-import { DAY, clone, fmtDate, driveDownloadUrl, drivePreviewUrl } from './util.js?v=15';
-import { DEFAULT_TAX, DEFAULT_SITE, buildPrem } from './defaults.js?v=15';
+import { DAY, clone, fmtDate, driveDownloadUrl, drivePreviewUrl } from './util.js?v=16';
+import { DEFAULT_TAX, DEFAULT_SITE, buildPrem } from './defaults.js?v=16';
 
 const must = ({ data, error }) => { if (error) throw error; return data; };
 
@@ -73,6 +73,13 @@ export function demoBackend(flags = {}) {
     saveSite: async (s) => { meta.site = clone(s); },
     listFiles: async (admin) => clone(files.filter((f) => admin || f.visible !== false)),
     hasPass: async () => !!flags.pass,
+    myRole: async () => null, // 데모에서는 "관리자 토글"이 OWNER 로 처리돼요
+    staffList: async () => [
+      { id: 'o1', username: 'imadmin', role: 'owner', at: now - 30 * DAY },
+      { id: 't1', username: 'teacher01', role: 'teacher', at: now - 5 * DAY },
+      { id: 'm1', username: 'mod01', role: 'mod', at: now - 2 * DAY },
+    ],
+    staffSet: async (name, role) => (name === 'nobody' ? 'not_found' : 'ok'),
     myPass: async () => passInfo(cur ? passOf(cur.username) : null),
     myState: async () => ({ points: cur ? pts[cur.username] || 0 : 0, owned: [...owned] }),
     getDriveId: async () => 'DEMO',
@@ -268,6 +275,15 @@ export function supabaseBackend(sb) {
 
     listFiles: async () => must(await sb.from('mh_files').select('*')).map(fromRow), // 숨김 자료는 서버가 관리자에게만 줌
     hasPass: async () => (await rpc('mh_has_pass')) === true,
+    // 내 직원 역할 (staff_roles.sql 을 아직 안 돌렸으면 조용히 null)
+    myRole: async () => {
+      try {
+        const { data, error } = await sb.rpc('staff_role');
+        return error || !data ? null : String(data);
+      } catch { return null; }
+    },
+    staffList: async () => must(await sb.rpc('staff_list')).map((r) => ({ id: r.uid, username: r.uname, role: r.urole, at: Date.parse(r.since) || 0 })),
+    staffSet: (name, role) => rpc('staff_set_role', { p_username: name, p_role: role }),
     myPass: async (u) => {
       const r = must(await sb.from('mh_pass').select('*').eq('user_id', u.id).maybeSingle());
       const today = new Date(Date.now() + 9 * 3600e3).toISOString().slice(0, 10); // 한국 날짜

@@ -8,7 +8,7 @@
 <meta name="description" content="물리·화학·생물·지구과학 엄선 문제 PDF">
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.min.css">
 <style>.drawer{position:fixed;top:0;bottom:0;left:0;width:300px;max-width:84vw;transform:translateX(-102%);visibility:hidden;background:#fff;z-index:100}.drawer.open{transform:none;visibility:visible}.drawer-bg{position:fixed;inset:0;visibility:hidden;z-index:90}.drawer-bg.open{visibility:visible}</style>
-<link rel="stylesheet" href="style.css?v=15">
+<link rel="stylesheet" href="style.css?v=16">
 </head>
 <body>
 <div id="notice" class="notice hidden"></div>
@@ -106,14 +106,15 @@
     <button class="btn ghost sm" data-close type="button">닫기</button>
   </div>
   <div class="tabs">
-    <button class="tab active" data-tab="tabDash" type="button">대시보드</button>
-    <button class="tab" data-tab="tabFiles" type="button">자료</button>
-    <button class="tab" data-tab="tabTax" type="button">과목·단원</button>
-    <button class="tab" data-tab="tabPoints" type="button">M포인트</button>
-    <button class="tab" data-tab="tabPass" type="button">M패스</button>
-    <button class="tab" data-tab="tabBanner" type="button">홈 배너</button>
-    <button class="tab" data-tab="tabMenu" type="button">메뉴</button>
-    <button class="tab" data-tab="tabSite" type="button">사이트 설정</button>
+    <button class="tab active" data-tab="tabDash" data-perm="finance_read" type="button">대시보드</button>
+    <button class="tab" data-tab="tabFiles" data-perm="content" type="button">자료</button>
+    <button class="tab" data-tab="tabTax" data-perm="content" type="button">과목·단원</button>
+    <button class="tab" data-tab="tabPoints" data-perm="finance_read" type="button">M포인트</button>
+    <button class="tab" data-tab="tabPass" data-perm="pass" type="button">M패스</button>
+    <button class="tab" data-tab="tabBanner" data-perm="@admin" type="button">홈 배너</button>
+    <button class="tab" data-tab="tabMenu" data-perm="@admin" type="button">메뉴</button>
+    <button class="tab" data-tab="tabSite" data-perm="@admin" type="button">사이트 설정</button>
+    <button class="tab" data-tab="tabStaff" data-perm="roles_basic" type="button">👥 권한</button>
   </div>
 
   <div id="tabDash" class="tabpane"><div id="dash"></div></div>
@@ -146,7 +147,7 @@
     <h4>처리할 충전 신청</h4>
     <div id="chargeList" class="list"></div>
     <div id="chargeDone" class="list"></div>
-    <form id="formPoints" class="form card-form">
+    <form id="formPoints" class="form card-form" data-perm="@admin">
       <h4>포인트 직접 지급 · 차감</h4>
       <label>PyNest ID (여러 명이면 줄바꿈 또는 쉼표)
         <textarea name="names" rows="2" required placeholder="student01&#10;student02"></textarea>
@@ -206,6 +207,24 @@
     </div>
   </div>
 
+  <div id="tabStaff" class="tabpane hidden">
+    <p class="note">민혁닷컴과 PyNest 가 <b>같은 권한</b>을 써요. 여기서 정하면 두 사이트에 모두 적용돼요. (가입된 PyNest ID 만 가능)</p>
+    <div class="role-help">
+      <div><i class="badge role owner">OWNER</i> 최상위. 모든 권한 + ADMIN 임명 <small>(원래 관리자 계정, 바꿀 수 없어요)</small></div>
+      <div><i class="badge role admin">ADMIN</i> 모든 관리 권한 · TEACHER/MOD 임명 가능 · ADMIN 임명은 OWNER 만</div>
+      <div><i class="badge role teacher">TEACHER</i> 자료·과목·단원(폴더)·파일 올리기 · PyNest 는 강의·문제집·문제·숙제</div>
+      <div><i class="badge role mod">MOD</i> 관리만 — 공지 · M패스 부여 · 충전 승인 · 회원 승인/중지 · 글·댓글 삭제</div>
+    </div>
+    <form id="formStaff" class="form card-form">
+      <div class="row">
+        <label class="grow">PyNest ID<input name="name" required maxlength="20" autocapitalize="none" placeholder="student01"></label>
+        <label>역할<select name="role" id="staffRoleSel"></select></label>
+        <button class="btn primary" type="submit">역할 부여</button>
+      </div>
+    </form>
+    <div id="staffList" class="list"></div>
+  </div>
+
   <div id="tabSite" class="tabpane hidden">
     <form id="formSite" class="form card-form">
       <label class="check"><input type="checkbox" name="autoApprove"> 민혁닷컴에서 가입한 사람은 PyNest 도 바로 사용 가능 (PyNest 자동 승인) — ⚠️ 끄면 PyNest 는 선생님이 승인해야 해요</label>
@@ -229,6 +248,6 @@
 </dialog>
 
 <div id="toast" class="toast"></div>
-<script type="module" src="app.js?v=15"></script>
+<script type="module" src="app.js?v=16"></script>
 </body>
 </html>

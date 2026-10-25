@@ -1,15 +1,21 @@
-import { CONFIG } from './config.js?v=15';
-import { $, $$, esc, clone, safeColor, safeLink, num, fmtDT, fmtDate, richText, ID_RE, toast, triggerDownload, DAY, PYNEST_URL } from './util.js?v=15';
-import { DEFAULT_TAX, DEFAULT_SITE, DEFAULT_MENU, DEFAULT_PLANS, DEFAULT_BANNERS } from './defaults.js?v=15';
-import { demoBackend, supabaseBackend } from './backend.js?v=15';
-import { S, subj, unitOf, findUnit, unitPath, unitIds, flatUnits, created, isNew, visibleFiles, unlocked, canMain, canSol, buyable, claimable, hasPreview } from './state.js?v=15';
-import { bindAdmin, openAdmin, adminClick } from './admin.js?v=15';
-import { B, barHTML, syncSel, bulkClick, bindBulk } from './bulk.js?v=15';
-import { pencil, startEdit, cancelEdit, commitEdit, newPageHTML, afterNewPage, filePanelHTML, openFilePanel, bindEditor } from './editor.js?v=15';
+import { CONFIG } from './config.js?v=16';
+import { $, $$, esc, clone, safeColor, safeLink, num, fmtDT, fmtDate, richText, ID_RE, toast, triggerDownload, DAY, PYNEST_URL } from './util.js?v=16';
+import { DEFAULT_TAX, DEFAULT_SITE, DEFAULT_MENU, DEFAULT_PLANS, DEFAULT_BANNERS } from './defaults.js?v=16';
+import { demoBackend, supabaseBackend } from './backend.js?v=16';
+import { S, subj, unitOf, findUnit, unitPath, unitIds, flatUnits, created, isNew, visibleFiles, unlocked, canMain, canSol, buyable, claimable, hasPreview, can, roleBadge } from './state.js?v=16';
+import { bindAdmin, openAdmin, adminClick } from './admin.js?v=16';
+import { B, barHTML, syncSel, bulkClick, bindBulk } from './bulk.js?v=16';
+import { pencil, startEdit, cancelEdit, commitEdit, newPageHTML, afterNewPage, filePanelHTML, openFilePanel, bindEditor } from './editor.js?v=16';
 
 S.DEMO = !CONFIG.SUPABASE_URL || /여기에/.test(CONFIG.SUPABASE_URL) || new URLSearchParams(location.search).has('demo');
 const demoFlags = {};
-const calcAdmin = (u) => !!u && ((u.role === 'admin' && u.status === 'approved') || (S.DEMO && !!window.__demoAdmin));
+// 역할: profiles.role 이 admin 이면 OWNER(원래 관리자), 아니면 staff_roles 의 ADMIN / TEACHER / MOD (없으면 null)
+async function calcRole(u) {
+  if (!u) return null;
+  if ((u.role === 'admin' && u.status === 'approved') || (S.DEMO && window.__demoAdmin)) return 'owner';
+  if (u.status !== 'approved') return null;
+  try { return (await S.api.myRole(u)) || null; } catch { return null; }
+}
 const nl2br = (s) => esc(s || '').replace(/\n/g, '<br>');
 const LV = ['', '기본', '표준', '심화'];
 const lvDots = (l) => { const n = Math.min(3, Math.max(1, Number(l) || 1)); return '●'.repeat(n) + '○'.repeat(3 - n); };
@@ -21,19 +27,19 @@ const linkAttrs = (u) => { const l = safeLink(u); return /^https?:/.test(l) ? `h
 function renderHeader() {
   $('#btnLogin').classList.toggle('hidden', !!S.user);
   $('#btnLogout').classList.toggle('hidden', !S.user);
-  $('#btnAdmin').classList.toggle('hidden', !S.isAdmin);
+  $('#btnAdmin').classList.toggle('hidden', !S.role);
   const chip = $('#userChip');
   chip.classList.toggle('hidden', !S.user);
   if (S.user) {
     chip.innerHTML = `<span class="un">${esc(S.user.username)}</span>` +
-      (S.isAdmin ? '<i class="badge admin">ADMIN</i>' : S.hasPass ? '<i class="badge m">M PASS</i>' : '') +
+      (S.role ? roleBadge() : S.hasPass ? '<i class="badge m">M PASS</i>' : '') +
       `<b class="pts">🪙 ${num(S.points)} P</b>`;
   }
   renderDrawerUser();
 }
 function renderDrawerUser() {
   $('#drUser').innerHTML = S.user
-    ? `<div class="dr-who"><b>${esc(S.user.username)}</b>${S.isAdmin ? '<i class="badge admin">ADMIN</i>' : S.hasPass ? '<i class="badge m">M PASS</i>' : ''}</div>
+    ? `<div class="dr-who"><b>${esc(S.user.username)}</b>${S.role ? roleBadge() : S.hasPass ? '<i class="badge m">M PASS</i>' : ''}</div>
        <div class="dr-pts"><span>🪙 ${num(S.points)} P</span><a href="#/points">충전</a></div>
        <button class="btn ghost sm" data-act="logout" type="button">로그아웃</button>`
     : `<button class="btn primary block" data-act="login" type="button">로그인</button>${CONFIG.ALLOW_SIGNUP ? '<button class="btn ghost block" data-act="signup" type="button">회원가입</button>' : ''}`;
@@ -123,7 +129,7 @@ function coverHTML(f, big = false) {
 }
 function priceTag(f) {
   if (f.tier === 'free') return '<span class="pt free">무료</span>';
-  if (S.isAdmin) return `<span class="pt own">관리자</span><span class="pt price">🪙 ${num(f.price)}P</span>`;
+  if (can('content')) return `<span class="pt own">관리자</span><span class="pt price">🪙 ${num(f.price)}P</span>`;
   if (unlocked(f)) return '<span class="pt own">내 자료</span>';
   return `<span class="pt price">🪙 ${num(f.price)}P</span>`;
 }
@@ -220,7 +226,7 @@ function acctHTML() {
       <div class="a-btns"><button class="btn primary block" data-act="login" type="button">로그인</button>
       ${CONFIG.ALLOW_SIGNUP ? '<button class="btn ghost block" data-act="signup" type="button">회원가입</button>' : ''}</div>`;
   }
-  return `<div class="a-hi"><b>${esc(S.user.username)}</b>님 ${S.isAdmin ? '<i class="badge admin">ADMIN</i>' : S.hasPass ? '<i class="badge m">M PASS</i>' : ''}</div>
+  return `<div class="a-hi"><b>${esc(S.user.username)}</b>님 ${S.role ? roleBadge() : S.hasPass ? '<i class="badge m">M PASS</i>' : ''}</div>
     <div class="a-pts"><span>내 M포인트</span><b>🪙 ${num(S.points)} P</b></div>
     <div class="a-btns"><a class="btn primary block" href="#/points">충전하기</a><a class="btn ghost block" href="#/me">내 자료 · 내역</a></div>`;
 }
@@ -324,16 +330,16 @@ function listHTML() {
     <aside class="side"><details ${folder ? "" : "open"}><summary>과목 · 단원</summary>${side}</details></aside>
     <div class="list-main">
       <div class="list-head"><h1>${sj ? `${esc(sj.emoji)} ${esc(sj.name)}${un ? ` <small>› ${esc(un.name)}</small>` : ''}` : view.q ? `‘${esc(view.q)}’ 검색 결과` : '전체 자료'} <span id="listCount"></span></h1>
-        ${S.isAdmin && sj ? `<button class="btn primary sm" data-act="admin-new" data-s="${esc(sj.id)}" data-u="${un ? esc(un.id) : ''}" type="button">＋ ${un ? '이 단원' : '이 과목'}에 자료 올리기</button>` : ''}
+        ${can('content') && sj ? `<button class="btn primary sm" data-act="admin-new" data-s="${esc(sj.id)}" data-u="${un ? esc(un.id) : ''}" type="button">＋ ${un ? '이 단원' : '이 과목'}에 자료 올리기</button>` : ''}
         ${sj ? `<a class="btn ghost sm" href="${folder ? `#/${encodeURIComponent(sj.id)}${un ? '/' + encodeURIComponent(un.id) : ''}?mode=list` : `#/${encodeURIComponent(sj.id)}${un ? '/' + encodeURIComponent(un.id) : ''}`}">${folder ? '☰ 목록으로 보기' : '📁 폴더로 보기'}</a>` : ''}
-        ${S.isAdmin && folder && !B.on ? '<button class="btn ghost sm" data-bulk="enter" type="button">☑ 선택 관리</button>' : ''}
+        ${can('content') && folder && !B.on ? '<button class="btn ghost sm" data-bulk="enter" type="button">☑ 선택 관리</button>' : ''}
         ${folder ? '' : `<div class="controls">
           <select id="tierSel" aria-label="등급"><option value="all">모든 자료</option><option value="free">무료</option><option value="premium">프리미엄</option></select>
           <select id="sortSel" aria-label="정렬"><option value="new">최신순</option><option value="pop">인기순</option><option value="easy">쉬운 순</option><option value="hard">어려운 순</option><option value="title">제목순</option></select>
           <input id="lq" type="search" placeholder="이 목록에서 검색" value="${esc(view.q)}">
         </div>`}</div>
       ${folder ? folderHTML(sj, un) : '<div id="listGrid"></div>'}
-      ${S.isAdmin && folder && B.on ? barHTML() : ''}
+      ${can('content') && folder && B.on ? barHTML() : ''}
     </div></div>`;
 }
 
@@ -341,7 +347,7 @@ function listHTML() {
 const natural = (a, b) => String(a.title).localeCompare(String(b.title), 'ko', { numeric: true });
 function tileHTML(f) {
   const lock = f.tier === 'premium' && !unlocked(f);
-  if (S.isAdmin && B.on) {
+  if (can('content') && B.on) {
     const pr = f.price > 0 ? `${num(f.price)}P` : '무료';
     return `<label class="tl pick ${f.visible === false ? 'hid' : ''}"><input type="checkbox" data-sel="${esc(f.id)}"><span class="tl-t">${esc(f.title)}</span><span class="tl-m">${pr}${f.visible === false ? ' · 숨김' : ''}${f.pinned ? ' · 📌' : ''}</span></label>`;
   }
@@ -381,11 +387,11 @@ function blocksOf(sj, nodes, trail, files, out) {
   return out;
 }
 function folderHTML(sj, un) {
-  const files = S.files.filter((f) => f.visible !== false || S.isAdmin);
+  const files = S.files.filter((f) => f.visible !== false || can('content'));
   const blocks = blocksOf(sj, un ? [un] : (sj.units || []), un ? unitPath(sj, un.id).slice(0, -1).map((x) => x.name) : [], files, []);
   const loose = un ? [] : files.filter((f) => f.subject === sj.id && !findUnit(sj, f.unit)).sort(natural);
-  const gsel = () => (S.isAdmin && B.on ? '<label class="gsel"><input type="checkbox" data-gsel> 전체 선택</label>' : '');
-  const add = (id) => S.isAdmin && !B.on ? `<button class="linkbtn" data-act="admin-new" data-s="${esc(sj.id)}" data-u="${esc(id)}" type="button">＋ 자료</button>` : '';
+  const gsel = () => (can('content') && B.on ? '<label class="gsel"><input type="checkbox" data-gsel> 전체 선택</label>' : '');
+  const add = (id) => can('content') && !B.on ? `<button class="linkbtn" data-act="admin-new" data-s="${esc(sj.id)}" data-u="${esc(id)}" type="button">＋ 자료</button>` : '';
   const small = (l) => `<div class="leaf sm"><div class="leaf-h"><b>${esc(l.u.name)}</b>${gsel()}${add(l.u.id)}</div>
     ${l.mine.length ? `<div class="tiles">${l.mine.map(tileHTML).join('')}</div>` : '<p class="note">아직 올라온 자료가 없어요.</p>'}</div>`;
   const card = (b) => `<section class="bigblk"><div class="leaf-h"><b>${b.trail.length ? `<span class="trail">${b.trail.map(esc).join(' › ')} › </span>` : ''}${esc(b.u.name)}</b>${gsel()}${add(b.u.id)}</div>
@@ -420,8 +426,8 @@ function detailHTML(id) {
         <div class="d-info">
           <div class="c-tag" style="--c:${safeColor(sj?.color)}"><span class="edhost" data-edhost="place" data-fid="${esc(f.id)}"><span class="edv">${esc(sj ? sj.emoji + ' ' + sj.name : '미분류')}${un ? ' · ' + esc(un.name) : ''}</span>${pencil('place', '과목·단원 바꾸기')}</span></div>
           <h1><span class="edhost" data-edhost="title" data-fid="${esc(f.id)}"><span class="edv">${esc(f.title)}</span>${pencil('title', '제목 수정')}</span> ${f.visible === false ? '<i class="bd hid">숨김</i>' : ''}${isNew(f) ? '<i class="bd new">NEW</i>' : ''}</h1>
-          <p class="d-desc"><span class="edhost" data-edhost="desc" data-fid="${esc(f.id)}"><span class="edv">${f.desc ? esc(f.desc) : (S.isAdmin ? '<span class="dim">설명이 없어요. 연필로 추가해줘</span>' : '')}</span>${pencil('desc', '설명 수정')}</span></p>
-          ${S.isAdmin ? `<div class="adm-row"><button class="btn sm" data-adm="vis" data-id="${esc(f.id)}" type="button">${f.visible === false ? '👁 공개하기' : '🙈 숨기기'}</button><button class="btn sm" data-adm="pin" data-id="${esc(f.id)}" type="button">${f.pinned ? '📌 고정 해제' : '📌 상단 고정'}</button><button class="btn sm danger" data-adm="del" data-id="${esc(f.id)}" type="button">🗑 삭제</button></div>` : ''}
+          <p class="d-desc"><span class="edhost" data-edhost="desc" data-fid="${esc(f.id)}"><span class="edv">${f.desc ? esc(f.desc) : (can('content') ? '<span class="dim">설명이 없어요. 연필로 추가해줘</span>' : '')}</span>${pencil('desc', '설명 수정')}</span></p>
+          ${can('content') ? `<div class="adm-row"><button class="btn sm" data-adm="vis" data-id="${esc(f.id)}" type="button">${f.visible === false ? '👁 공개하기' : '🙈 숨기기'}</button><button class="btn sm" data-adm="pin" data-id="${esc(f.id)}" type="button">${f.pinned ? '📌 고정 해제' : '📌 상단 고정'}</button><button class="btn sm danger" data-adm="del" data-id="${esc(f.id)}" type="button">🗑 삭제</button></div>` : ''}
           <dl class="spec">
             <dt>난이도</dt><dd><span class="edhost" data-edhost="level" data-fid="${esc(f.id)}"><span class="edv">${lvDots(f.level)} ${LV[Math.min(3, Math.max(1, Number(f.level) || 1))]}</span>${pencil('level')}</span></dd>
             <dt>문항 수</dt><dd><span class="edhost" data-edhost="count" data-fid="${esc(f.id)}"><span class="edv">${Number(f.count) || '-'}문항</span>${pencil('count')}</span></dd>
@@ -430,11 +436,11 @@ function detailHTML(id) {
             <dt>다운로드</dt><dd>${num(f.downloads)}회</dd>
           </dl>
         </div></div>
-      <section class="d-sec"><h2>이 자료에는 ${S.isAdmin ? '<button class="pencil" type="button" data-srcopen="' + esc(f.id) + '" title="파일 바꾸기" aria-label="파일 바꾸기">✏️ <small>파일 바꾸기</small></button>' : ''}</h2>
+      <section class="d-sec"><h2>이 자료에는 ${can('content') ? '<button class="pencil" type="button" data-srcopen="' + esc(f.id) + '" title="파일 바꾸기" aria-label="파일 바꾸기">✏️ <small>파일 바꾸기</small></button>' : ''}</h2>
         <ul class="incl"><li>📄 <b>문제 PDF</b> — ${Number(f.count) || '-'}문항</li>
           <li>${f.hasSolution ? '📝 <b>해설 PDF</b> — 풀이 수록' : '<span class="dim">📝 해설 PDF 없음</span>'}</li>
           <li>♾️ <b>구매하거나 받은 뒤 재다운로드</b> 무제한 (내 정보에서 확인)</li></ul>
-        ${S.isAdmin ? filePanelHTML(f) : ''}</section>
+        ${can('content') ? filePanelHTML(f) : ''}</section>
       <section class="d-sec"><h2>미리보기</h2>
         ${hasPreview(f) ? '<div id="prevBox" class="prev-box"><button class="btn ghost" data-act="preview" type="button">👁 샘플 문제 보기</button></div>' : '<p class="dim">등록된 미리보기가 없어요.</p>'}</section>
       ${rel.length ? `<section class="d-sec"><h2>같은 과목 다른 자료</h2>${gridOf(rel)}</section>` : ''}
@@ -457,7 +463,7 @@ function buyBoxHTML(f) {
   const me = S.user
     ? `<div class="mypts"><span>내 포인트</span><b>🪙 ${num(S.points)} P</b><a href="#/points">충전</a></div>${S.pass.active ? `<div class="mypts"><span>M패스 남은 건수</span><b>👑 ${num(S.pass.left)}건</b><a href="#/pass">보기</a></div>` : ''}`
     : '<div class="mypts"><span>구매하려면 로그인이 필요해요</span><button class="btn sm primary" data-act="login" type="button">로그인</button></div>';
-  const note = unlocked(f) && !free ? (S.isAdmin ? '' : '<p class="b-note ok">✅ 내 자료예요. 언제든 다시 받을 수 있어요</p>')
+  const note = unlocked(f) && !free ? (can('content') ? '' : '<p class="b-note ok">✅ 내 자료예요. 언제든 다시 받을 수 있어요</p>')
     : (!free ? '<p class="b-note">구매하거나 M패스로 받으면 문제·해설 PDF를 계속 다시 받을 수 있어요.</p>' : '');
   return `<div class="buy-box"><div class="b-price"><span>${free ? '무료 자료' : '프리미엄'}</span>${priceEd}</div>
     <div class="b-btns">${btns.join('')}</div>${note}${me}</div>`;
@@ -479,7 +485,7 @@ async function meHTML() {
   const mine = pu.map((p) => ({ p, f: S.files.find((x) => x.id === p.fileId) })).filter((x) => x.f);
   return `<div class="page-h"><h1>내 정보</h1></div>
   <div class="me-top">
-    <div class="me-card"><span>아이디</span><b>${esc(S.user.username)}</b>${S.isAdmin ? '<i class="badge admin">ADMIN</i>' : S.pass.active ? '<i class="badge m">M PASS</i>' : '<small>M패스 없음</small>'}</div>
+    <div class="me-card"><span>아이디</span><b>${esc(S.user.username)}</b>${S.role ? roleBadge() : S.pass.active ? '<i class="badge m">M PASS</i>' : '<small>M패스 없음</small>'}</div>
     <div class="me-card"><span>M패스</span>${S.pass.active ? `<b>👑 ${esc(S.pass.plan || '이용중')}</b><small>남은 ${num(S.pass.left)}건 / 총 ${num(S.pass.quota)}건 · ${esc(S.pass.expires || '무기한')}까지</small>` : '<small>없음</small><a class="btn sm ghost" href="#/pass">보러가기</a>'}</div>
     <div class="me-card pts"><span>내 M포인트</span><b>🪙 ${num(S.points)} P</b><a class="btn sm primary" href="#/points">충전하기</a></div>
   </div>
@@ -590,7 +596,7 @@ function aboutHTML() {
 /* =====================================================================
    공지사항 (PyNest 처럼 선생님만 쓰고, 모두가 읽어요)
    ===================================================================== */
-const sortedNotices = () => [...S.notices].filter((n) => n.visible !== false || S.isAdmin)
+const sortedNotices = () => [...S.notices].filter((n) => n.visible !== false || can('notice'))
   .sort((a, b) => (b.pinned ? 1 : 0) - (a.pinned ? 1 : 0) || b.createdAt - a.createdAt);
 const noticeRow = (n) => `<a class="row-item nt-row" href="#/notices/${encodeURIComponent(n.id)}">
   <span class="nt-t">${n.pinned ? '<i class="bd pin">📌</i> ' : ''}<b>${esc(n.title)}</b>${n.visible === false ? ' <i class="bd hid">숨김</i>' : ''}</span>
@@ -604,7 +610,7 @@ function noticeBlockHTML() {
 function noticesHTML() {
   document.title = '공지사항 — 민혁닷컴';
   const list = sortedNotices();
-  return `<div class="page-h page-h-row"><h1>📢 공지사항</h1>${S.isAdmin ? '<button class="btn primary" data-act="notice-new" type="button">글쓰기</button>' : ''}</div>
+  return `<div class="page-h page-h-row"><h1>📢 공지사항</h1>${can('notice') ? '<button class="btn primary" data-act="notice-new" type="button">글쓰기</button>' : ''}</div>
     <div class="rows">${list.length ? list.map(noticeRow).join('') : '<p class="empty">아직 공지가 없어요.</p>'}</div>`;
 }
 function noticeDetailHTML(id) {
@@ -614,7 +620,7 @@ function noticeDetailHTML(id) {
   return `<p><a class="back" href="#/notices">← 공지사항</a></p>
     <article class="panel notice-post"><h1 class="post-title">${n.pinned ? '📌 ' : ''}${esc(n.title)} ${n.visible === false ? '<i class="bd hid">숨김</i>' : ''}</h1>
       <p class="note">${esc(n.author || '선생님')} · ${fmtDT(n.createdAt)}${n.updatedAt ? ' (수정됨)' : ''}
-        ${S.isAdmin ? ` <button class="linkbtn" data-act="notice-edit" data-id="${esc(n.id)}" type="button">수정</button> <button class="linkbtn danger" data-act="notice-del" data-id="${esc(n.id)}" type="button">삭제</button>` : ''}</p>
+        ${can('notice') ? ` <button class="linkbtn" data-act="notice-edit" data-id="${esc(n.id)}" type="button">수정</button> <button class="linkbtn danger" data-act="notice-del" data-id="${esc(n.id)}" type="button">삭제</button>` : ''}</p>
       <div class="post-body">${richText(n.body)}</div></article>`;
 }
 let noticeEditId = null;
@@ -649,7 +655,7 @@ async function deleteNotice(id) {
   catch (err) { console.error(err); toast('삭제 실패'); }
 }
 async function loadNotices() {
-  try { S.notices = await S.api.listNotices(S.isAdmin); } catch (e) { console.warn('공지 로드 실패 (schema.sql v5 실행 전일 수 있어요)', e); S.notices = []; }
+  try { S.notices = await S.api.listNotices(can('notice')); } catch (e) { console.warn('공지 로드 실패 (schema.sql v5 실행 전일 수 있어요)', e); S.notices = []; }
 }
 
 /* =====================================================================
@@ -672,7 +678,7 @@ async function download(id, kind) {
 
 async function adminQuick(act, id) {
   const f = S.files.find((x) => x.id === id);
-  if (!f || !S.isAdmin) return;
+  if (!f || !can('content')) return;
   try {
     if (act === 'vis') { await S.api.patchFile(id, { visible: f.visible === false }); toast(f.visible === false ? '공개했어' : '숨겼어 (초안)'); }
     else if (act === 'pin') { await S.api.patchFile(id, { pinned: !f.pinned }); toast(f.pinned ? '고정을 풀었어' : '상단에 고정했어'); }
@@ -915,7 +921,7 @@ function bind() {
    시작
    ===================================================================== */
 async function loadFiles() {
-  try { S.files = await S.api.listFiles(S.isAdmin); } catch (e) { console.error(e); toast('자료를 불러오지 못했어'); S.files = []; }
+  try { S.files = await S.api.listFiles(can('content')); } catch (e) { console.error(e); toast('자료를 불러오지 못했어'); S.files = []; }
   await loadNotices();
 }
 async function refreshUserState() {
@@ -934,7 +940,8 @@ async function applyUser(u) {
     return;
   }
   S.user = u;
-  S.isAdmin = calcAdmin(u);
+  S.role = await calcRole(u);
+  S.isAdmin = S.role === 'owner' || S.role === 'admin';
   await refreshUserState();
   await loadFiles();
   await route();

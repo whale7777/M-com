@@ -1,11 +1,12 @@
-import { DAY } from './util.js?v=15';
+import { DAY } from './util.js?v=16';
 
 // 앱 전체가 같이 쓰는 상태. (여러 모듈이 같은 객체를 보기 때문에 한 곳에 모아뒀어요)
 export const S = {
   DEMO: false,
   api: null,
   user: null,
-  isAdmin: false,
+  isAdmin: false, // OWNER 또는 ADMIN (예전의 "관리자" — 모든 관리 기능)
+  role: null,     // 'owner' | 'admin' | 'teacher' | 'mod' | null  (staff_roles.sql)
   hasPass: false,
   pass: { active: false, left: 0, quota: 0, used: 0, expires: null, plan: '' },
   points: 0,
@@ -37,9 +38,27 @@ export const isNew = (f) => created(f) > 0 && Date.now() - created(f) < 7 * DAY;
 export const hasPreview = (f) => !!f.previewId || f.previewSrc === 'upload';
 export const visibleFiles = () => S.files.filter((f) => f.visible !== false);
 
-// 이 자료의 "잠금"이 풀려 있나? (관리자 / M패스 / 구매)
-// 무료 자료는 모두에게, 프리미엄은 관리자 / 구매한 사람 / M패스로 받은 사람에게 열려요.
-export const unlocked = (f) => f.tier === 'free' || S.isAdmin || S.owned.has(f.id);
+/* ---- 직원 권한 (schema 의 staff_roles.sql → staff_can() 과 같은 표예요. 바꾸면 둘 다 바꿔요) ----
+   content 자료·과목·단원·파일 올리기/고치기 · notice 공지 · pass M패스 · charge 충전 승인
+   finance_read 포인트·내역 보기 · members 회원 관리 · moderate 글·댓글 삭제 · roles_basic TEACHER/MOD 임명 · roles_admin ADMIN 임명 */
+export const ROLES = {
+  owner: { label: 'OWNER', desc: '최상위 · 모든 권한 + ADMIN 임명' },
+  admin: { label: 'ADMIN', desc: '모든 관리 권한 (ADMIN 임명은 불가)' },
+  teacher: { label: 'TEACHER', desc: '자료·과목·단원·파일 올리기' },
+  mod: { label: 'MOD', desc: '관리만: 공지 · M패스 · 충전 승인' },
+};
+const PERMS = {
+  owner: () => true,
+  admin: (p) => p !== 'roles_admin',
+  teacher: (p) => p === 'content',
+  mod: (p) => ['notice', 'pass', 'charge', 'finance_read', 'members', 'moderate'].includes(p),
+};
+export const can = (perm) => !!(S.role && PERMS[S.role] && PERMS[S.role](perm));
+export const roleBadge = () => (S.role ? `<i class="badge role ${S.role}">${ROLES[S.role].label}</i>` : '');
+
+// 이 자료의 "잠금"이 풀려 있나? (직원(자료 권한) / M패스 / 구매)
+// 무료 자료는 모두에게, 프리미엄은 자료 권한이 있는 직원 / 구매한 사람 / M패스로 받은 사람에게 열려요.
+export const unlocked = (f) => f.tier === 'free' || can('content') || S.owned.has(f.id);
 export const canMain = (f) => unlocked(f);
 export const canSol = (f) => !!f.hasSolution && unlocked(f);
 // 포인트로 살 수 있는 상태인가?

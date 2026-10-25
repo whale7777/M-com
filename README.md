@@ -136,3 +136,18 @@ PyNest 와 **같은 Supabase 프로젝트**를 쓰기 때문에, PyNest 의 ID·
 - M패스: 45일 15건 19,900원 · 90일 35건 39,900원 · 6개월 65건 69,000원 · 12개월 115건 119,000원 (1건당 약 1,035~1,327원).
 - M패스는 포인트 충전처럼 계좌이체로 신청 → 관리자가 입금 확인 후 승인하면 바로 시작 (관리자 › M포인트 › 대기 목록에 함께 나와요).
 - DB: `schema.sql` 맨 아래 v7 블록 (`mh_charges.plan`, `mh_request_pass`, `mh_apply_pass`, `mh_resolve_charge` 교체).
+
+## v9 — 직원 권한 (OWNER / ADMIN / TEACHER / MOD) — 민혁닷컴 + PyNest 공용
+- **`staff_roles.sql` 을 Supabase SQL Editor 에서 한 번 실행**하세요. 기존 표·정책·데이터는 건드리지 않고 "추가"만 해요. (여러 번 실행해도 안전)
+- 원래 관리자(`profiles.role = 'admin'`, imadmin)는 자동으로 **OWNER** 예요.
+- 역할은 ⚙️ 관리자 패널 › **👥 권한** 탭에서 PyNest ID 로 부여/변경/해임해요. 두 사이트에 같이 적용돼요.
+
+| 역할 | 할 수 있는 일 |
+|---|---|
+| OWNER | 전부 + ADMIN 임명/해임 |
+| ADMIN | 전부 (ADMIN 임명/해임·OWNER 변경 제외), TEACHER/MOD 임명 가능 |
+| TEACHER | 자료·과목·단원(폴더)·파일 올리기/고치기 (PyNest: 강의·문제집·문제·숙제) |
+| MOD | 관리만: 공지, M패스 부여, 충전/패스 신청 승인, 회원 승인/중지, 글·댓글 삭제 |
+
+- 권한표를 바꾸려면 `staff_roles.sql` 의 `staff_can()` 과 `state.js` 의 `PERMS` 를 같이 고치세요.
+- `staff_roles.sql` 을 아직 안 돌렸어도 사이트는 예전처럼 동작해요 (직원 역할만 안 보여요).

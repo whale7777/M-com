@@ -3,14 +3,14 @@
    - 설정 창을 따로 열지 않고, 자료를 연 화면에서 제목·가격·설명을 바로 수정해요.
    - 가격이 0이면 무료, 1 이상이면 프리미엄으로 자동 정해져요.
    ===================================================================== */
-import { $, $$, esc, num, toast, extractDriveId, MAX_UPLOAD_MB, fmtSize, safeColor } from './util.js?v=15';
-import { S, subj, flatUnits, findUnit } from './state.js?v=15';
-import { DEFAULT_PRICE, LEVEL_PRICE } from './defaults.js?v=15';
+import { $, $$, esc, num, toast, extractDriveId, MAX_UPLOAD_MB, fmtSize, safeColor } from './util.js?v=16';
+import { S, subj, flatUnits, findUnit, can } from './state.js?v=16';
+import { DEFAULT_PRICE, LEVEL_PRICE } from './defaults.js?v=16';
 
 export const MAX_PRICE = 1000000;
 const LV = ['', '기본', '표준', '심화'];
 
-export const pencil = (fld, label = '수정') => (S.isAdmin
+export const pencil = (fld, label = '수정') => (can('content')
   ? `<button class="pencil" type="button" data-ed="${fld}" title="${label}" aria-label="${label}">✏️</button>` : '');
 
 /* ---------- 공통: 한 자료를 통째로 저장 (등급은 가격으로 결정) ---------- */
@@ -230,7 +230,7 @@ export function newPageHTML(pre = {}) {
   document.title = '새 자료 만들기 — 민혁닷컴';
   const sid = subj(pre.s) ? pre.s : S.tax[0]?.id || '';
   const un = findUnit(subj(sid), pre.u) ? pre.u : '';
-  if (!S.isAdmin) return '<div class="notfound"><h2>관리자만 쓸 수 있어요</h2><p>관리자 계정으로 로그인해줘.</p><a class="btn primary" href="#/">홈으로</a></div>';
+  if (!can('content')) return '<div class="notfound"><h2>자료 올리기 권한이 필요해요</h2><p>OWNER · ADMIN · TEACHER 계정으로 로그인해줘.</p><a class="btn primary" href="#/">홈으로</a></div>';
   if (!S.tax.length) return '<div class="notfound"><h2>과목이 아직 없어요</h2><p>관리자 › 과목·단원에서 과목을 먼저 만들어줘.</p></div>';
   const sj = subj(sid);
   return `<div class="crumb"><a href="#/">홈</a> › <a href="#/${encodeURIComponent(sid)}">${esc(sj.name)}</a> › <span>새 자료 만들기</span></div>

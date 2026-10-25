@@ -1,6 +1,6 @@
-import { $, $$, esc, clone, uid, safeColor, fmtDate, fmtDT, num, ID_RE, toast, extractDriveId, saveBlob, move, DAY, MAX_UPLOAD_MB, fmtSize } from './util.js?v=15';
-import { S, subj, unitOf, created, flatUnits, unitIds } from './state.js?v=15';
-import { DEFAULT_MENU } from './defaults.js?v=15';
+import { $, $$, esc, clone, uid, safeColor, fmtDate, fmtDT, num, ID_RE, toast, extractDriveId, saveBlob, move, DAY, MAX_UPLOAD_MB, fmtSize } from './util.js?v=16';
+import { S, subj, unitOf, created, flatUnits, unitIds, can, ROLES } from './state.js?v=16';
+import { DEFAULT_MENU } from './defaults.js?v=16';
 
 let editId = null, taxDraft = null, taxDirty = false, bannerDraft = null, bannerDirty = false, menuDraft = null, menuDirty = false;
 let passCache = [], pointsCache = [], chargesCache = [], ledgerCache = [];
@@ -16,8 +16,20 @@ const passActive = (p) => ['ok', 'soon'].includes(passStatus(p).k);
 const FAIL = '저장 실패 (schema.sql 실행 / 관리자 계정 확인)';
 
 /* ---- 열기 / 탭 ---- */
+// 탭마다 필요한 권한(data-perm). "@admin" 은 OWNER/ADMIN 만
+const tabAllowed = (el) => { const p = el.dataset.perm; return !p || (p === '@admin' ? S.isAdmin : can(p)); };
+function applyRolePerms() {
+  $$('#dlgAdmin .tab[data-perm]').forEach((b) => b.classList.toggle('hidden', !tabAllowed(b)));
+  $$('#dlgAdmin [data-perm]:not(.tab)').forEach((el) => el.classList.toggle('hidden', !tabAllowed(el)));
+  const head = $('#dlgAdmin .dlg-head h3');
+  if (head) head.textContent = `⚙️ 관리자 패널${S.role ? ' · ' + ROLES[S.role].label : ''}`;
+}
 export async function openAdmin(startTab = 'tabDash') {
   $('#dlgAdmin').showModal();
+  applyRolePerms();
+  const first = $$('#dlgAdmin .tab').find((b) => !b.classList.contains('hidden'));
+  const startBtn = $(`#dlgAdmin .tab[data-tab="${startTab}"]`);
+  if (!startBtn || startBtn.classList.contains('hidden')) startTab = first ? first.dataset.tab : startTab;
   fillSubjectSelects();
   taxDraft = clone(S.tax); taxDirty = false; renderTaxAdmin();
   bannerDraft = clone(S.site.banners || []); bannerDirty = false; renderBannerAdmin();
@@ -38,6 +50,7 @@ function switchTab(id) {
   if (id === 'tabFiles') renderAdminFiles();
   if (id === 'tabPass') refreshPass().then(renderAdminPass);
   if (id === 'tabPoints') refreshPoints().then(renderAdminPoints);
+  if (id === 'tabStaff') refreshStaff().then(renderStaff);
 }
 
 /* ---- 대시보드 ---- */
@@ -189,7 +202,7 @@ function renderAdminPoints() {
   const q = $('#ptSearch').value.trim().toLowerCase();
   const list = pointsCache.filter((p) => !q || p.username.toLowerCase().includes(q)).sort((a, b) => b.balance - a.balance);
   $('#pointList').innerHTML = list.length ? list.map((p) => `<div class="item"><div>${esc(p.username)} <b class="pts-b">🪙 ${num(p.balance)} P</b></div>
-    <div class="item-btns"><button class="btn sm" data-padj="${esc(p.username)}" type="button">조정</button></div></div>`).join('') : '<p class="note">포인트를 가진 회원이 아직 없어요.</p>';
+    <div class="item-btns">${S.isAdmin ? `<button class="btn sm" data-padj="${esc(p.username)}" type="button">조정</button>` : ''}</div></div>`).join('') : '<p class="note">포인트를 가진 회원이 아직 없어요.</p>';
   $('#ledgerList').innerHTML = ledgerCache.length ? `<div class="tbl"><div class="tr th"><span>일시</span><span>회원</span><span>내용</span><span>변동</span><span>잔액</span></div>${ledgerCache.slice(0, 50).map((l) =>
     `<div class="tr"><span>${fmtDT(l.at)}</span><span>${esc(l.username)}</span><span>${{ grant: '지급', deduct: '차감', charge: '충전', purchase: '구매' }[l.kind] || ''} ${esc(l.memo || '')}</span><span class="${l.delta >= 0 ? 'plus' : 'minus'}">${l.delta >= 0 ? '+' : ''}${num(l.delta)}</span><span>${num(l.balance_after)}</span></div>`).join('')}</div>` : '<p class="note">내역이 없어요.</p>';
 }
@@ -221,6 +234,50 @@ async function resolveCharge(id, approve) {
     await refreshPoints(); await refreshPass(); renderAdminPoints(); renderDash();
     toast(r === 'ok' ? (approve ? '승인했어! 반영됐어 ✅' : '거절했어') : r === 'plan_missing' ? '이 M패스 플랜이 지금 없어요 (사이트 설정 확인)' : r === 'already_done' ? '이미 처리된 신청이야' : '신청을 찾을 수 없어');
   } catch (err) { console.error(err); toast('처리 실패'); }
+}
+
+/* ---- 권한 (OWNER / ADMIN / TEACHER / MOD) ---- */
+let staffCache = [];
+const ROLE_ORDER = { owner: 0, admin: 1, teacher: 2, mod: 3 };
+async function refreshStaff() {
+  try { staffCache = await S.api.staffList(); }
+  catch (e) { console.error(e); staffCache = null; }
+}
+const STAFF_MSG = { not_found: '가입된 ID가 아니에요', self: '자기 자신의 역할은 바꿀 수 없어요', is_owner: 'OWNER 는 바꿀 수 없어요', forbidden: 'ADMIN 임명·해임은 OWNER 만 할 수 있어요', invalid: '역할이 올바르지 않아요' };
+function renderStaff() {
+  const sel = $('#staffRoleSel');
+  if (sel) {
+    const opts = [['teacher', 'TEACHER · 자료 올리기'], ['mod', 'MOD · 관리만']];
+    if (can('roles_admin')) opts.unshift(['admin', 'ADMIN · 모든 관리']);
+    sel.innerHTML = opts.map(([v, l]) => `<option value="${v}">${l}</option>`).join('');
+  }
+  if (!staffCache) { $('#staffList').innerHTML = '<p class="note">직원 목록을 불러오지 못했어요. <b>staff_roles.sql</b> 을 Supabase SQL Editor 에서 한 번 실행했는지 확인해줘.</p>'; return; }
+  const rows = [...staffCache].sort((a, b) => (ROLE_ORDER[a.role] ?? 9) - (ROLE_ORDER[b.role] ?? 9) || a.username.localeCompare(b.username));
+  $('#staffList').innerHTML = rows.length ? rows.map((r) => {
+    const fixed = r.role === 'owner' || r.username === S.user?.username;
+    const canEdit = !fixed && (r.role !== 'admin' || can('roles_admin'));
+    const btn = (role, label) => (r.role !== role && (role !== 'admin' || can('roles_admin')) ? `<button class="btn sm" data-srole="${esc(r.username)}|${role}" type="button">${label}</button>` : '');
+    return `<div class="item"><div><i class="badge role ${esc(r.role)}">${esc(ROLES[r.role]?.label || r.role)}</i> <b>${esc(r.username)}</b>
+      <small>${esc(ROLES[r.role]?.desc || '')}${r.at ? ' · ' + fmtDate(new Date(r.at)) : ''}${r.username === S.user?.username ? ' · 나' : ''}</small></div>
+      <div class="item-btns">${canEdit ? `${btn('admin', 'ADMIN으로')}${btn('teacher', 'TEACHER로')}${btn('mod', 'MOD로')}<button class="btn sm danger" data-srole="${esc(r.username)}|none" type="button">해임</button>` : ''}</div></div>`;
+  }).join('') : '<p class="note">직원이 아직 없어요.</p>';
+}
+async function setStaffRole(name, role) {
+  if (role === 'none' && !confirm(`${name} 님의 직원 권한을 해임할까?`)) return;
+  try {
+    const r = await S.api.staffSet(name, role);
+    if (r !== 'ok') return toast(STAFF_MSG[r] || '처리하지 못했어요');
+    await refreshStaff(); renderStaff();
+    toast(role === 'none' ? '해임했어' : `${ROLES[role].label} 로 지정했어 ✨`);
+  } catch (err) { console.error(err); toast('처리 실패 (staff_roles.sql 실행 / OWNER·ADMIN 계정 확인)'); }
+}
+async function submitStaff(e) {
+  e.preventDefault();
+  const fd = Object.fromEntries(new FormData(e.target));
+  const name = String(fd.name || '').trim().toLowerCase();
+  if (!ID_RE.test(name)) return toast('ID 형식이 이상해');
+  await setStaffRole(name, fd.role);
+  e.target.reset(); renderStaff();
 }
 
 /* ---- M패스 ---- */
@@ -476,6 +533,7 @@ export function bindAdmin() {
   };
   $('#formSite').onsubmit = submitSite;
   $('#btnExport').onclick = exportBackup;
+  $('#formStaff').onsubmit = submitStaff;
 }
 
 // 전역 클릭 위임에서 호출. 처리했으면 true
@@ -543,6 +601,7 @@ export async function adminClick(e, t) {
     if (t.matches('[data-mdel]')) { menuDraft.splice(mi, 1); markMenuDirty(); renderMenuAdmin(); return true; }
   }
 
+  if (d.srole !== undefined) { const [n, r] = d.srole.split('|'); await setStaffRole(n, r); return true; }
   if (d.cok !== undefined) { await resolveCharge(d.cok, true); return true; }
   if (d.cno !== undefined) { await resolveCharge(d.cno, false); return true; }
   if (d.padj !== undefined) {
