@@ -1,9 +1,9 @@
-import { CONFIG } from './config.js?v=6';
-import { $, $$, esc, clone, safeColor, safeLink, num, fmtDT, ID_RE, toast, triggerDownload, DAY, PYNEST_URL } from './util.js?v=6';
-import { DEFAULT_TAX, DEFAULT_SITE, DEFAULT_MENU } from './defaults.js?v=6';
-import { demoBackend, supabaseBackend } from './backend.js?v=6';
-import { S, subj, unitOf, created, isNew, visibleFiles, unlocked, canMain, canSol, buyable } from './state.js?v=6';
-import { bindAdmin, openAdmin, adminClick } from './admin.js?v=6';
+import { CONFIG } from './config.js?v=7';
+import { $, $$, esc, clone, safeColor, safeLink, num, fmtDT, fmtDate, richText, ID_RE, toast, triggerDownload, DAY, PYNEST_URL } from './util.js?v=7';
+import { DEFAULT_TAX, DEFAULT_SITE, DEFAULT_MENU } from './defaults.js?v=7';
+import { demoBackend, supabaseBackend } from './backend.js?v=7';
+import { S, subj, unitOf, created, isNew, visibleFiles, unlocked, canMain, canSol, buyable, hasPreview } from './state.js?v=7';
+import { bindAdmin, openAdmin, adminClick, openAdminNewFile, openAdminEditFile } from './admin.js?v=7';
 
 S.DEMO = !CONFIG.SUPABASE_URL || /여기에/.test(CONFIG.SUPABASE_URL) || new URLSearchParams(location.search).has('demo');
 const demoFlags = {};
@@ -132,6 +132,8 @@ async function route() {
 
   if (head === 'f') {
     cur = 'detail'; html = detailHTML(parts[1]);
+  } else if (head === 'notices') {
+    cur = 'notices'; html = parts[1] ? noticeDetailHTML(parts[1]) : noticesHTML();
   } else if (head === 'me') {
     cur = 'me'; html = await meHTML();
   } else if (head === 'points') {
@@ -196,6 +198,8 @@ function homeHTML() {
     </div>
     <aside class="acct" id="acct">${acctHTML()}</aside>
   </section>
+
+  ${noticeBlockHTML()}
 
   <section class="stats-strip">
     <div><b>${num(sets)}</b><span>PDF 세트</span></div><div><b>${num(qn)}</b><span>엄선 문항</span></div>
@@ -278,6 +282,7 @@ function listHTML() {
     <aside class="side"><details open><summary>과목 · 단원</summary>${side}</details></aside>
     <div class="list-main">
       <div class="list-head"><h1>${sj ? `${esc(sj.emoji)} ${esc(sj.name)}${un ? ` <small>› ${esc(un.name)}</small>` : ''}` : view.q ? `‘${esc(view.q)}’ 검색 결과` : '전체 자료'} <span id="listCount"></span></h1>
+        ${S.isAdmin && sj ? `<button class="btn primary sm" data-act="admin-new" data-s="${esc(sj.id)}" data-u="${un ? esc(un.id) : ''}" type="button">＋ ${un ? '이 단원' : '이 과목'}에 자료 올리기</button>` : ''}
         <div class="controls">
           <select id="tierSel" aria-label="등급"><option value="all">모든 자료</option><option value="free">무료</option><option value="premium">프리미엄</option></select>
           <select id="sortSel" aria-label="정렬"><option value="new">최신순</option><option value="pop">인기순</option><option value="easy">쉬운 순</option><option value="hard">어려운 순</option><option value="title">제목순</option></select>
@@ -312,6 +317,7 @@ function detailHTML(id) {
           <div class="c-tag" style="--c:${safeColor(sj?.color)}">${esc(sj ? sj.emoji + ' ' + sj.name : '미분류')}${un ? ' · ' + esc(un.name) : ''}</div>
           <h1>${esc(f.title)} ${f.visible === false ? '<i class="bd hid">숨김</i>' : ''}${isNew(f) ? '<i class="bd new">NEW</i>' : ''}</h1>
           <p class="d-desc">${esc(f.desc || '')}</p>
+          ${S.isAdmin ? `<button class="btn sm" data-act="admin-edit" data-id="${esc(f.id)}" type="button">✏️ 이 자료 수정</button>` : ''}
           <dl class="spec">
             <dt>난이도</dt><dd>${lvDots(f.level)} ${LV[Math.min(3, Math.max(1, Number(f.level) || 1))]}</dd>
             <dt>문항 수</dt><dd>${Number(f.count) || '-'}문항</dd>
@@ -325,7 +331,7 @@ function detailHTML(id) {
           <li>${f.hasSolution ? '📝 <b>해설 PDF</b> — 풀이 수록' : '<span class="dim">📝 해설 PDF 없음</span>'}</li>
           <li>♾️ <b>구매 후 재다운로드</b> 무제한 (내 정보에서 확인)</li></ul></section>
       <section class="d-sec"><h2>미리보기</h2>
-        ${f.previewId ? '<div id="prevBox" class="prev-box"><button class="btn ghost" data-act="preview" type="button">👁 샘플 문제 보기</button></div>' : '<p class="dim">등록된 미리보기가 없어요.</p>'}</section>
+        ${hasPreview(f) ? '<div id="prevBox" class="prev-box"><button class="btn ghost" data-act="preview" type="button">👁 샘플 문제 보기</button></div>' : '<p class="dim">등록된 미리보기가 없어요.</p>'}</section>
       ${rel.length ? `<section class="d-sec"><h2>같은 과목 다른 자료</h2>${gridOf(rel)}</section>` : ''}
     </div>
     <aside class="d-buy">${buyBoxHTML(f)}</aside>
@@ -442,6 +448,71 @@ function aboutHTML() {
 }
 
 /* =====================================================================
+   공지사항 (PyNest 처럼 선생님만 쓰고, 모두가 읽어요)
+   ===================================================================== */
+const sortedNotices = () => [...S.notices].filter((n) => n.visible !== false || S.isAdmin)
+  .sort((a, b) => (b.pinned ? 1 : 0) - (a.pinned ? 1 : 0) || b.createdAt - a.createdAt);
+const noticeRow = (n) => `<a class="row-item nt-row" href="#/notices/${encodeURIComponent(n.id)}">
+  <span class="nt-t">${n.pinned ? '<i class="bd pin">📌</i> ' : ''}<b>${esc(n.title)}</b>${n.visible === false ? ' <i class="bd hid">숨김</i>' : ''}</span>
+  <small>${fmtDate(new Date(n.createdAt))}</small></a>`;
+function noticeBlockHTML() {
+  const list = sortedNotices().slice(0, 4);
+  if (!list.length) return '';
+  return `<section class="blk"><div class="blk-h"><h2>📢 공지사항</h2><a class="more" href="#/notices">더 보기 ›</a></div>
+    <div class="rows">${list.map(noticeRow).join('')}</div></section>`;
+}
+function noticesHTML() {
+  document.title = '공지사항 — 민혁닷컴';
+  const list = sortedNotices();
+  return `<div class="page-h page-h-row"><h1>📢 공지사항</h1>${S.isAdmin ? '<button class="btn primary" data-act="notice-new" type="button">글쓰기</button>' : ''}</div>
+    <div class="rows">${list.length ? list.map(noticeRow).join('') : '<p class="empty">아직 공지가 없어요.</p>'}</div>`;
+}
+function noticeDetailHTML(id) {
+  const n = S.notices.find((x) => x.id === id);
+  if (!n) return '<div class="notfound"><h2>공지를 찾을 수 없어요</h2><a class="btn primary" href="#/notices">공지사항 목록</a></div>';
+  document.title = `${n.title} — 민혁닷컴`;
+  return `<p><a class="back" href="#/notices">← 공지사항</a></p>
+    <article class="panel notice-post"><h1 class="post-title">${n.pinned ? '📌 ' : ''}${esc(n.title)} ${n.visible === false ? '<i class="bd hid">숨김</i>' : ''}</h1>
+      <p class="note">${esc(n.author || '선생님')} · ${fmtDT(n.createdAt)}${n.updatedAt ? ' (수정됨)' : ''}
+        ${S.isAdmin ? ` <button class="linkbtn" data-act="notice-edit" data-id="${esc(n.id)}" type="button">수정</button> <button class="linkbtn danger" data-act="notice-del" data-id="${esc(n.id)}" type="button">삭제</button>` : ''}</p>
+      <div class="post-body">${richText(n.body)}</div></article>`;
+}
+let noticeEditId = null;
+function openNoticeForm(id) {
+  noticeEditId = id;
+  const n = id ? S.notices.find((x) => x.id === id) : null;
+  const f = $('#formNotice').elements;
+  $('#noticeDlgTitle').textContent = n ? '공지 수정' : '공지 쓰기';
+  f.title.value = n ? n.title : '';
+  f.body.value = n ? n.body : '';
+  f.pinned.checked = !!(n && n.pinned);
+  f.visible.value = n && n.visible === false ? '0' : '1';
+  $('#dlgNotice').showModal();
+}
+async function submitNotice(e) {
+  e.preventDefault();
+  const f = e.target.elements;
+  const data = { title: f.title.value.trim(), body: f.body.value.trim(), pinned: f.pinned.checked, visible: f.visible.value === '1' };
+  if (!data.title) return toast('제목을 적어줘');
+  try {
+    if (noticeEditId) await S.api.updateNotice(noticeEditId, data);
+    else await S.api.addNotice(data, S.user?.username || '');
+    $('#dlgNotice').close();
+    await loadNotices();
+    toast(noticeEditId ? '공지를 수정했어' : '공지를 올렸어 📢');
+    await route();
+  } catch (err) { console.error(err); toast('저장 실패 (schema.sql 을 다시 실행했는지 / 관리자 계정인지 확인)'); }
+}
+async function deleteNotice(id) {
+  if (!confirm('이 공지를 삭제할까?')) return;
+  try { await S.api.deleteNotice(id); await loadNotices(); toast('삭제했어'); location.hash = '#/notices'; await route(); }
+  catch (err) { console.error(err); toast('삭제 실패'); }
+}
+async function loadNotices() {
+  try { S.notices = await S.api.listNotices(S.isAdmin); } catch (e) { console.warn('공지 로드 실패 (schema.sql v5 실행 전일 수 있어요)', e); S.notices = []; }
+}
+
+/* =====================================================================
    다운로드 / 구매
    ===================================================================== */
 async function download(id, kind) {
@@ -449,9 +520,9 @@ async function download(id, kind) {
   if (!f) return;
   if (kind === 'solution' ? !canSol(f) : !canMain(f)) return toast('이 자료는 구매하거나 M패스가 있어야 받을 수 있어요');
   try {
-    const driveId = await S.api.getDriveId(f, kind);
+    const url = await S.api.getLink(f, kind);
     if (S.DEMO) toast('데모 모드라 실제 파일은 없어! 설정하면 바로 다운로드돼');
-    else { triggerDownload(driveId); toast('다운로드 시작! 📥'); }
+    else { triggerDownload(url); toast('다운로드 시작! 📥'); }
     if (kind === 'main') {
       f.downloads = (f.downloads || 0) + 1;
       S.api.countDownload(f.id);
@@ -543,8 +614,9 @@ async function submitAuth(e) {
 function bind() {
   $('#btnLogin').onclick = () => openAuth('login');
   $('#formAuth').onsubmit = submitAuth;
+  $('#formNotice').onsubmit = submitNotice;
   $('#btnLogout').onclick = () => S.api.logout();
-  $('#btnAdmin').onclick = openAdmin;
+  $('#btnAdmin').onclick = () => openAdmin();
   $('#btnMenu').onclick = openDrawer;
   $('#btnMenuClose').onclick = closeDrawer;
   $('#drawerBg').onclick = closeDrawer;
@@ -592,15 +664,23 @@ function bind() {
     if (!t) return;
     const d = t.dataset;
     if (t.matches('[data-close]')) return t.closest('dialog').close();
+    if (d.act === 'admin-new') return openAdminNewFile(d.s, d.u);
+    if (d.act === 'admin-edit') return openAdminEditFile(d.id);
+    if (d.act === 'notice-new') return openNoticeForm(null);
+    if (d.act === 'notice-edit') return openNoticeForm(d.id);
+    if (d.act === 'notice-del') return deleteNotice(d.id);
     if (d.act === 'logout') { closeDrawer(); return S.api.logout(); }
     if (d.act === 'login') { closeDrawer(); return openAuth('login'); }
     if (d.act === 'signup') { closeDrawer(); return openAuth('signup'); }
     if (d.act === 'preview') {
       const id = (location.hash.match(/#\/f\/([^?]+)/) || [])[1];
       const f = S.files.find((x) => x.id === decodeURIComponent(id || ''));
-      if (!f || !f.previewId) return;
+      if (!f || !hasPreview(f)) return;
       if (S.DEMO) return toast('데모 모드라 미리보기 파일은 없어!');
-      $('#prevBox').innerHTML = `<iframe title="미리보기" loading="lazy" src="https://drive.google.com/file/d/${encodeURIComponent(f.previewId)}/preview"></iframe>`;
+      try {
+        const url = await S.api.getLink(f, 'preview');
+        $('#prevBox').innerHTML = `<iframe title="미리보기" loading="lazy" src="${esc(url)}"></iframe>`;
+      } catch (err) { console.error(err); toast('미리보기를 불러오지 못했어요'); }
       return;
     }
     if (d.dot !== undefined) { startCarousel.show?.(Number(d.dot)); clearInterval(carouselTimer); return; }
@@ -617,6 +697,7 @@ function bind() {
    ===================================================================== */
 async function loadFiles() {
   try { S.files = await S.api.listFiles(S.isAdmin); } catch (e) { console.error(e); toast('자료를 불러오지 못했어'); S.files = []; }
+  await loadNotices();
 }
 async function refreshUserState() {
   S.hasPass = false; S.points = 0; S.owned = new Set();
@@ -673,6 +754,11 @@ S.hooks.refreshUser = refreshUserState;
     const m = await S.api.loadMeta();
     if (Array.isArray(m.tax)) S.tax = m.tax;
     if (m.site) S.site = { ...clone(DEFAULT_SITE), ...m.site };
+    // 예전에 저장된 메뉴에는 "공지사항"이 없으니 홈 아래에 한 번 끼워줘요 (메뉴를 저장하면 그 뒤로는 관리자 마음대로)
+    if (Array.isArray(m.site.menu) && (m.site.menuVer || 0) < 1 && !S.site.menu.some((x) => x.link === '#/notices')) {
+      const i = S.site.menu.findIndex((x) => x.link === '#/');
+      S.site.menu.splice(i + 1, 0, clone(DEFAULT_MENU.find((x) => x.id === 'm_notice')));
+    }
     // 예전에 저장된 PyNest 배너 주소(대소문자가 틀린 기본값)는 설정 파일 주소를 따라가게 바꿔줘요
     (S.site.banners || []).forEach((b) => { if (b.id === 'b_pynest' && /^https?:\/\/whale7777\.github\.io\/pynest\/?$/.test(b.link || '')) b.link = '@pynest'; });
   } catch (e) { console.warn('meta 로드 실패 (기본값 사용)', e); }

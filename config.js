@@ -17,6 +17,9 @@ export const CONFIG = {
 
   // 홈 배너·푸터에서 연결할 PyNest 주소 (PyNest 저장소 주소에 맞게 바꿔요)
   PYNEST_URL: 'https://whale7777.github.io/PYNEST/',
+  // 직접 업로드할 수 있는 PDF 한 개의 최대 용량(MB). schema.sql 의 버킷 제한(기본 10MB)과 맞춰요.
+  MAX_UPLOAD_MB: 10,
+
   // 민혁닷컴(이 사이트) 주소 — 드로어 메뉴의 "사이트 이동" 버튼에 쓰여요
   MCOM_URL: 'https://whale7777.github.io/M-com/',
 };

@@ -1,6 +1,6 @@
-import { $, $$, esc, clone, uid, safeColor, fmtDate, fmtDT, num, ID_RE, toast, extractDriveId, saveBlob, move, DAY } from './util.js?v=6';
-import { S, subj, unitOf, created } from './state.js?v=6';
-import { DEFAULT_MENU } from './defaults.js?v=6';
+import { $, $$, esc, clone, uid, safeColor, fmtDate, fmtDT, num, ID_RE, toast, extractDriveId, saveBlob, move, DAY, MAX_UPLOAD_MB, fmtSize } from './util.js?v=7';
+import { S, subj, unitOf, created } from './state.js?v=7';
+import { DEFAULT_MENU } from './defaults.js?v=7';
 
 let editId = null, taxDraft = null, taxDirty = false, bannerDraft = null, bannerDirty = false, menuDraft = null, menuDirty = false;
 let passCache = [], pointsCache = [], chargesCache = [], ledgerCache = [];
@@ -16,7 +16,7 @@ const passActive = (p) => ['ok', 'soon'].includes(passStatus(p).k);
 const FAIL = '저장 실패 (schema.sql 실행 / 관리자 계정 확인)';
 
 /* ---- 열기 / 탭 ---- */
-export async function openAdmin() {
+export async function openAdmin(startTab = 'tabDash') {
   $('#dlgAdmin').showModal();
   fillSubjectSelects();
   taxDraft = clone(S.tax); taxDirty = false; renderTaxAdmin();
@@ -24,7 +24,15 @@ export async function openAdmin() {
   menuDraft = clone(S.site.menu && S.site.menu.length ? S.site.menu : DEFAULT_MENU); menuDirty = false; renderMenuAdmin();
   fillSiteForm();
   await Promise.all([refreshPass(), refreshPoints()]);
-  switchTab('tabDash');
+  switchTab(startTab);
+}
+export async function openAdminNewFile(sid, unitId) {
+  await openAdmin('tabFiles');
+  openNewFile({ s: sid, u: unitId });
+}
+export async function openAdminEditFile(id) {
+  await openAdmin('tabFiles');
+  await openEditFile(id);
 }
 function switchTab(id) {
   $$('#dlgAdmin .tab').forEach((x) => x.classList.toggle('active', x.dataset.tab === id));
@@ -102,19 +110,37 @@ function renderAdminFiles() {
       </div></div>`;
   }).join('') : '<p class="note">조건에 맞는 자료가 없어.</p>';
 }
+// 문제/해설/미리보기 각각 "없음 · 드라이브 링크 · 파일 업로드" 중 고르는 칸 보이기
+function syncSrc() {
+  const form = $('#formFile');
+  for (const fs of $$('fieldset.src', form)) {
+    const mode = form.elements[fs.dataset.kind + '_mode'].value;
+    $$('[data-for]', fs).forEach((el) => el.classList.toggle('hidden', el.dataset.for !== mode));
+  }
+}
+const setCur = (kind, text) => { $(`fieldset.src[data-kind=${kind}] [data-cur]`).textContent = text || ''; };
+let hadUpload = { main: false, solution: false, preview: false }; // 수정 중인 자료에 이미 올라간 파일이 있나
+
 function resetFileForm() {
   editId = null;
+  hadUpload = { main: false, solution: false, preview: false };
   const f = $('#formFile');
   f.reset();
+  syncSrc();
+  ['main', 'solution', 'preview'].forEach((k) => setCur(k, ''));
   $('#formTitle').textContent = '새 자료 등록';
   $('#btnSaveFile').textContent = '저장';
+  $('#btnSaveFile').disabled = false;
   fillSubjectSelects();
   f.classList.add('hidden');
 }
-function openNewFile() {
+function openNewFile(pre = {}) {
   resetFileForm();
-  $('#formFile').classList.remove('hidden');
-  $('#formFile').elements.title.focus();
+  const form = $('#formFile');
+  form.classList.remove('hidden');
+  if (pre.s && subj(pre.s)) { $('#fSubject').value = pre.s; fillUnitSelect(pre.u || ''); }
+  form.elements.title.focus();
+  form.scrollIntoView?.({ behavior: 'smooth', block: 'start' });
 }
 async function openEditFile(id) {
   const f = S.files.find((x) => x.id === id);
@@ -126,46 +152,88 @@ async function openEditFile(id) {
   editId = id;
   fillSubjectSelects(f.subject);
   fillUnitSelect(f.unit);
-  form.elements.title.value = f.title;
-  form.elements.level.value = String(f.level || 1);
-  form.elements.tier.value = f.tier;
-  form.elements.count.value = f.count || '';
-  form.elements.price.value = f.price || 0;
-  form.elements.visible.value = f.visible === false ? '0' : '1';
-  form.elements.desc.value = f.desc || '';
-  form.elements.drive.value = (f.tier === 'free' ? f.driveId : p.driveId) || '';
-  form.elements.solution.value = p.solutionId || '';
-  form.elements.preview.value = f.previewId || '';
+  const el = form.elements;
+  el.title.value = f.title;
+  el.level.value = String(f.level || 1);
+  el.tier.value = f.tier;
+  el.count.value = f.count || '';
+  el.price.value = f.price || 0;
+  el.visible.value = f.visible === false ? '0' : '1';
+  el.desc.value = f.desc || '';
+  hadUpload = { main: f.mainSrc === 'upload', solution: !!f.hasSolution && f.solutionSrc === 'upload', preview: f.previewSrc === 'upload' };
+  el.main_mode.value = f.mainSrc === 'upload' ? 'upload' : 'drive';
+  el.drive.value = f.mainSrc === 'upload' ? '' : ((f.tier === 'free' ? f.driveId : p.driveId) || '');
+  el.solution_mode.value = !f.hasSolution ? 'none' : f.solutionSrc === 'upload' ? 'upload' : 'drive';
+  el.solution.value = p.solutionId || '';
+  el.preview_mode.value = f.previewSrc === 'upload' ? 'upload' : f.previewId ? 'drive' : 'none';
+  el.preview.value = f.previewId || '';
+  const note = '✅ 이미 업로드된 파일이 있어요. 새 파일을 고르면 교체돼요.';
+  if (hadUpload.main) setCur('main', note);
+  if (hadUpload.solution) setCur('solution', note);
+  if (hadUpload.preview) setCur('preview', note);
+  syncSrc();
   $('#formTitle').textContent = '자료 수정';
   $('#btnSaveFile').textContent = '수정 저장';
   form.classList.remove('hidden');
   form.scrollIntoView?.({ behavior: 'smooth', block: 'start' });
 }
+
+// 한 칸(문제/해설/미리보기)의 입력을 읽어요. 문제가 있으면 {error}
+function readSrc(form, kind, label, required) {
+  const mode = form.elements[kind + '_mode'].value;
+  const linkName = { main: 'drive', solution: 'solution', preview: 'preview' }[kind];
+  if (mode === 'none') return { mode };
+  if (mode === 'drive') {
+    const id = extractDriveId(form.elements[linkName].value);
+    return id ? { mode, id } : { error: `${label} 드라이브 링크를 다시 확인해줘` };
+  }
+  const file = form.elements[kind + '_file'].files[0];
+  if (!file) return hadUpload[kind] ? { mode } : { error: `${label} 파일을 골라줘` };
+  if (!(file.type === 'application/pdf' || /\.pdf$/i.test(file.name))) return { error: `${label}는 PDF 파일만 올릴 수 있어요` };
+  if (file.size > MAX_UPLOAD_MB * 1048576) return { error: `${label} 파일이 너무 커요 (${fmtSize(file.size)} / 최대 ${MAX_UPLOAD_MB}MB)` };
+  return { mode, file };
+}
+
 async function submitFile(e) {
   e.preventDefault();
-  const fd = Object.fromEntries(new FormData(e.target));
-  const main = extractDriveId(fd.drive);
-  if (!main) return toast('문제 PDF 드라이브 링크를 다시 확인해줘');
-  const solution = fd.solution.trim() ? extractDriveId(fd.solution) : null;
-  if (fd.solution.trim() && !solution) return toast('해설 링크를 다시 확인해줘');
-  const preview = fd.preview.trim() ? extractDriveId(fd.preview) : null;
-  if (fd.preview.trim() && !preview) return toast('미리보기 링크를 다시 확인해줘');
+  const form = e.target;
+  const fd = Object.fromEntries(new FormData(form));
   if (!fd.subject) return toast('과목을 먼저 만들어줘 (과목·단원 탭)');
+  const main = readSrc(form, 'main', '문제 PDF', true);
+  const sol = readSrc(form, 'solution', '해설 PDF');
+  const prev = readSrc(form, 'preview', '미리보기');
+  const bad = [main, sol, prev].find((x) => x.error);
+  if (bad) return toast(bad.error);
   const price = Math.max(0, Math.min(1000000, Math.floor(Number(fd.price) || 0)));
   const data = {
     title: fd.title.trim(), subject: fd.subject, unit: fd.unit || '', level: Number(fd.level) || 1,
-    tier: fd.tier, count: Number(fd.count) || 0, desc: fd.desc.trim(), price,
-    previewId: preview || '', hasSolution: !!solution, visible: fd.visible === '1',
+    tier: fd.tier, count: Number(fd.count) || 0, desc: fd.desc.trim(), price, visible: fd.visible === '1',
+    mainSrc: main.mode === 'upload' ? 'upload' : 'drive',
+    hasSolution: sol.mode !== 'none', solutionSrc: sol.mode === 'upload' ? 'upload' : 'drive',
+    previewSrc: prev.mode === 'upload' ? 'upload' : 'drive', previewId: prev.mode === 'drive' ? prev.id : '',
   };
+  const ids = { main: main.mode === 'drive' ? main.id : null, solution: sol.mode === 'drive' ? sol.id : null };
+  const up = {};
+  if (main.file) up.main = main.file;
+  if (sol.file) up.solution = sol.file;
+  if (prev.file) up.preview = prev.file;
+  const btn = $('#btnSaveFile');
+  const label = btn.textContent;
+  btn.disabled = true;
+  if (Object.keys(up).length) btn.textContent = '업로드 중… (창을 닫지 마세요)';
   try {
-    if (editId) await S.api.updateFile(editId, data, { main, solution });
-    else await S.api.addFile(data, { main, solution });
+    if (editId) await S.api.updateFile(editId, data, ids, up);
+    else await S.api.addFile(data, ids, up);
     const wasEdit = !!editId;
     resetFileForm();
     await S.hooks.reload();
     renderAdminFiles(); renderDash();
     toast(wasEdit ? '수정 완료 ✅' : '등록 완료! 🎉');
-  } catch (err) { console.error(err); toast(FAIL); }
+  } catch (err) {
+    console.error(err);
+    btn.disabled = false; btn.textContent = label;
+    toast(Object.keys(up).length ? '업로드/저장 실패 (schema.sql v5 실행 / 용량 / 관리자 계정 확인)' : FAIL);
+  }
 }
 
 /* ---- 과목·단원 ---- */
@@ -444,7 +512,9 @@ async function exportBackup() {
 
 /* ---- 이벤트 ---- */
 export function bindAdmin() {
-  $('#btnNewFile').onclick = openNewFile;
+  $('#btnNewFile').onclick = () => openNewFile();
+  $('#maxMb').textContent = MAX_UPLOAD_MB;
+  $('#formFile').addEventListener('change', (e) => { if (e.target.type === 'radio') syncSrc(); });
   $('#btnCancelFile').onclick = resetFileForm;
   $('#fSubject').onchange = () => fillUnitSelect();
   $('#formFile').onsubmit = submitFile;

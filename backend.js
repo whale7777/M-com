@@ -1,5 +1,5 @@
-import { DAY, clone, fmtDate } from './util.js?v=6';
-import { DEFAULT_TAX, DEFAULT_SITE, buildPrem } from './defaults.js?v=6';
+import { DAY, clone, fmtDate, driveDownloadUrl, drivePreviewUrl } from './util.js?v=7';
+import { DEFAULT_TAX, DEFAULT_SITE, buildPrem } from './defaults.js?v=7';
 
 const must = ({ data, error }) => { if (error) throw error; return data; };
 
@@ -11,7 +11,7 @@ export function demoBackend(flags = {}) {
   const now = Date.now();
   const mk = (subject, unit, tier, level, title, desc, count, extra = {}) => ({
     id: 'd' + seq++, subject, unit, tier, level, title, desc, count, visible: true, pinned: false, price: tier === 'premium' ? 300 : 0,
-    downloads: Math.floor(Math.random() * 180), createdAt: now - seq * 2 * DAY,
+    downloads: Math.floor(Math.random() * 180), createdAt: now - seq * 2 * DAY, mainSrc: 'drive', solutionSrc: 'drive', previewSrc: 'drive',
     driveId: tier === 'free' ? 'DEMO' : undefined, previewId: 'DEMO', hasSolution: false, ...extra,
   });
   const files = [
@@ -42,6 +42,11 @@ export function demoBackend(flags = {}) {
     { id: 'c2', username: 'demo_user', amount: 1000, depositor: '데모', status: 'done', at: now - 5 * DAY },
   ];
   let lid = 2;
+  let notices = [
+    { id: 'n1', title: '민혁닷컴 오픈! M포인트 이용 안내', body: '프리미엄 자료는 M포인트로 구매하거나 M패스로 열 수 있어요.\n충전은 M포인트 메뉴에서 신청해주세요.', pinned: true, visible: true, author: 'teacher', createdAt: now - 2 * DAY, updatedAt: null },
+    { id: 'n2', title: '11월 신규 자료 업로드 예정', body: '물리·화학 심화 세트가 곧 올라와요.', pinned: false, visible: true, author: 'teacher', createdAt: now - 6 * DAY, updatedAt: null },
+    { id: 'n3', title: '(초안) 비공개 공지 예시', body: '관리자에게만 보여요.', pinned: false, visible: false, author: 'teacher', createdAt: now - 1 * DAY, updatedAt: null },
+  ];
   const listeners = [];
   let cur = null;
   const find = (id) => files.find((f) => f.id === id);
@@ -85,16 +90,21 @@ export function demoBackend(flags = {}) {
       charges.unshift({ id: 'c' + Date.now(), username: cur.username, amount, depositor, status: 'pending', at: Date.now() });
       return 'ok';
     },
+    getLink: async (f, kind) => 'DEMO:' + kind,
     addFile: async (f, ids) => {
       const id = 'd' + Date.now();
-      files.unshift({ ...f, id, downloads: 0, pinned: false, createdAt: Date.now(), driveId: f.tier === 'free' ? ids.main : undefined });
+      files.unshift({ ...f, id, downloads: 0, pinned: false, createdAt: Date.now(), driveId: f.tier === 'free' && f.mainSrc !== 'upload' ? ids.main : undefined });
       prem[id] = buildPrem(f.tier, ids);
       return id;
     },
     updateFile: async (id, f, ids) => {
-      Object.assign(find(id), f, { driveId: f.tier === 'free' ? ids.main : undefined });
+      Object.assign(find(id), f, { driveId: f.tier === 'free' && f.mainSrc !== 'upload' ? ids.main : undefined });
       prem[id] = buildPrem(f.tier, ids);
     },
+    listNotices: async (admin) => clone(notices.filter((n) => admin || n.visible)),
+    addNotice: async (n, author) => { notices.unshift({ ...n, id: 'n' + Date.now(), author, createdAt: Date.now(), updatedAt: null }); },
+    updateNotice: async (id, n) => { Object.assign(notices.find((x) => x.id === id), n, { updatedAt: Date.now() }); },
+    deleteNotice: async (id) => { notices = notices.filter((x) => x.id !== id); },
     patchFile: async (id, patch) => { Object.assign(find(id), patch); },
     deleteFile: async (id) => { files.splice(files.findIndex((f) => f.id === id), 1); delete prem[id]; owned.delete(id); },
     countDownload: async (id) => { const f = find(id); if (f) f.downloads = (f.downloads || 0) + 1; },
@@ -128,7 +138,7 @@ export function demoBackend(flags = {}) {
       return 'ok';
     },
     listLedger: async () => clone(ledger).slice(0, 100),
-    exportAll: async () => clone({ files, premium: prem, mpass, points: pts, ledger, charges }),
+    exportAll: async () => clone({ files, premium: prem, mpass, points: pts, ledger, charges, notices }),
   };
 }
 
@@ -143,10 +153,12 @@ export function supabaseBackend(sb) {
     id: r.id, title: r.title, subject: r.subject, unit: r.unit, level: r.level, tier: r.tier, count: r.count,
     desc: r.desc, previewId: r.preview_id, hasSolution: r.has_solution, visible: r.visible, pinned: r.pinned,
     downloads: r.downloads, price: r.price || 0, driveId: r.drive_id || undefined, createdAt: Date.parse(r.created_at) || 0,
+    mainSrc: r.main_src || 'drive', solutionSrc: r.solution_src || 'drive', previewSrc: r.preview_src || 'drive',
   });
   const toRow = (f) => ({
     title: f.title, subject: f.subject, unit: f.unit, level: f.level, tier: f.tier, count: f.count,
     desc: f.desc, preview_id: f.previewId, has_solution: f.hasSolution, visible: f.visible, price: f.price || 0,
+    main_src: f.mainSrc || 'drive', solution_src: f.solutionSrc || 'drive', preview_src: f.previewSrc || 'drive',
   });
   const profileOf = async (session) => {
     const uid = session.user.id;
@@ -157,6 +169,17 @@ export function supabaseBackend(sb) {
     return { id: uid, username: session.user.user_metadata?.username || '회원', role: 'student', status: 'pending' };
   };
   const rpc = async (name, args) => must(await sb.rpc(name, args));
+  const BUCKET = 'mh-files';
+  const KINDS = ['main', 'solution', 'preview'];
+  const objPath = (id, kind) => `${id}/${kind}.pdf`;
+  const safeName = (t, kind) => `${String(t || 'file').replace(/[\\/:*?"<>|\r\n]+/g, ' ').trim().slice(0, 80) || 'file'}${kind === 'solution' ? ' 해설' : ''}.pdf`;
+  const uploadAll = async (id, up = {}) => {
+    for (const k of KINDS) {
+      if (up[k]) must(await sb.storage.from(BUCKET).upload(objPath(id, k), up[k], { upsert: true, contentType: 'application/pdf', cacheControl: '3600' }));
+    }
+  };
+  const removeObjects = async (id, kinds = KINDS) => { try { await sb.storage.from(BUCKET).remove(kinds.map((k) => objPath(id, k))); } catch { /* 없어도 괜찮아요 */ } };
+  const nz = (x) => (x ? x : null);
 
   return {
     onAuth: (cb) => {
@@ -204,29 +227,63 @@ export function supabaseBackend(sb) {
       if (!id) throw new Error('파일 ID 없음');
       return id;
     },
+    // 받기/미리보기용 주소. 업로드 파일은 권한이 있을 때만 서버가 임시 주소(2분)를 만들어줘요.
+    getLink: async (f, kind) => {
+      const src = kind === 'solution' ? f.solutionSrc : kind === 'preview' ? f.previewSrc : f.mainSrc;
+      if (src === 'upload') {
+        const opt = kind === 'preview' ? undefined : { download: safeName(f.title, kind) };
+        const { data, error } = await sb.storage.from(BUCKET).createSignedUrl(objPath(f.id, kind), 120, opt);
+        if (error || !data?.signedUrl) throw error || new Error('권한 없음');
+        return data.signedUrl;
+      }
+      if (kind === 'preview') return drivePreviewUrl(f.previewId);
+      const id = await (async () => {
+        if (kind === 'main' && f.tier === 'free') return f.driveId;
+        const r = must(await sb.from('mh_premium').select('drive_id,solution_id').eq('file_id', f.id).maybeSingle());
+        return r && (kind === 'solution' ? r.solution_id : r.drive_id);
+      })();
+      if (!id) throw new Error('파일 ID 없음');
+      return driveDownloadUrl(id);
+    },
     buyFile: (id) => rpc('mh_buy_file', { p_file: id }),
     myLedger: async (u) => must(await sb.from('mh_ledger').select('*').eq('user_id', u.id).order('created_at', { ascending: false }).limit(100)).map(ledgerFrom),
     myCharges: async (u) => must(await sb.from('mh_charges').select('*').eq('user_id', u.id).order('created_at', { ascending: false }).limit(30)).map(chargeFrom),
     myPurchases: async (u) => must(await sb.from('mh_purchases').select('*').eq('user_id', u.id).order('created_at', { ascending: false }))
       .map((r) => ({ fileId: r.file_id, price: r.price, at: Date.parse(r.created_at) || 0 })),
     requestCharge: (amount, depositor) => rpc('mh_request_charge', { p_amount: amount, p_depositor: depositor || '' }),
-    addFile: async (f, ids) => {
-      const { id } = must(await sb.from('mh_files').insert({ ...toRow(f), drive_id: f.tier === 'free' ? ids.main : null }).select('id').single());
-      const prem = buildPrem(f.tier, ids);
-      if (Object.keys(prem).length) {
-        const { error } = await sb.from('mh_premium').insert(premRow(id, prem));
-        if (error) { await sb.from('mh_files').delete().eq('id', id); throw error; }
+    addFile: async (f, ids, up = {}) => {
+      const { id } = must(await sb.from('mh_files').insert({ ...toRow(f), drive_id: f.tier === 'free' && f.mainSrc !== 'upload' ? nz(ids.main) : null }).select('id').single());
+      try {
+        await uploadAll(id, up);
+        const prem = buildPrem(f.tier, ids);
+        if (Object.keys(prem).length) must(await sb.from('mh_premium').insert(premRow(id, prem)));
+      } catch (err) { // 중간에 실패하면 반쯤 만들어진 자료를 지워요
+        await removeObjects(id);
+        await sb.from('mh_files').delete().eq('id', id);
+        throw err;
       }
       return id;
     },
-    updateFile: async (id, f, ids) => {
-      must(await sb.from('mh_files').update({ ...toRow(f), drive_id: f.tier === 'free' ? ids.main : null, updated_at: new Date().toISOString() }).eq('id', id));
+    updateFile: async (id, f, ids, up = {}) => {
+      must(await sb.from('mh_files').update({ ...toRow(f), drive_id: f.tier === 'free' && f.mainSrc !== 'upload' ? nz(ids.main) : null, updated_at: new Date().toISOString() }).eq('id', id));
+      await uploadAll(id, up);
       const prem = buildPrem(f.tier, ids);
       if (Object.keys(prem).length) must(await sb.from('mh_premium').upsert(premRow(id, prem)));
       else must(await sb.from('mh_premium').delete().eq('file_id', id));
+      // 드라이브 방식으로 바꾼 항목의 예전 업로드 파일 정리
+      const old = [];
+      if (f.mainSrc !== 'upload') old.push('main');
+      if (f.solutionSrc !== 'upload' || !f.hasSolution) old.push('solution');
+      if (f.previewSrc !== 'upload') old.push('preview');
+      if (old.length) await removeObjects(id, old);
     },
     patchFile: async (id, patch) => { must(await sb.from('mh_files').update(patch).eq('id', id)); },
-    deleteFile: async (id) => { must(await sb.from('mh_files').delete().eq('id', id)); },
+    deleteFile: async (id) => { await removeObjects(id); must(await sb.from('mh_files').delete().eq('id', id)); },
+
+    listNotices: async () => must(await sb.from('mh_notices').select('*').order('created_at', { ascending: false })).map(noticeFrom),
+    addNotice: async (n, author) => { must(await sb.from('mh_notices').insert({ title: n.title, body: n.body, pinned: !!n.pinned, visible: n.visible !== false, author: author || '' })); },
+    updateNotice: async (id, n) => { must(await sb.from('mh_notices').update({ title: n.title, body: n.body, pinned: !!n.pinned, visible: n.visible !== false, updated_at: new Date().toISOString() }).eq('id', id)); },
+    deleteNotice: async (id) => { must(await sb.from('mh_notices').delete().eq('id', id)); },
     countDownload: async (id) => { try { await sb.rpc('mh_count_download', { p_id: id }); } catch { /* 통계라서 무시 */ } },
 
     listPass: async () => must(await sb.from('mh_pass').select('*').order('username'))
@@ -241,7 +298,7 @@ export function supabaseBackend(sb) {
     listLedger: async () => must(await sb.from('mh_ledger').select('*').order('created_at', { ascending: false }).limit(100)).map(ledgerFrom),
 
     exportAll: async () => {
-      const t = ['mh_files', 'mh_premium', 'mh_pass', 'mh_points', 'mh_ledger', 'mh_purchases', 'mh_charges'];
+      const t = ['mh_files', 'mh_premium', 'mh_pass', 'mh_points', 'mh_ledger', 'mh_purchases', 'mh_charges', 'mh_notices'];
       const res = await Promise.all(t.map((n) => sb.from(n).select('*')));
       return Object.fromEntries(t.map((n, i) => [n.replace('mh_', ''), must(res[i])]));
     },
@@ -249,3 +306,5 @@ export function supabaseBackend(sb) {
 }
 const ledgerFrom = (r) => ({ id: r.id, username: r.username, delta: r.delta, balance_after: r.balance_after, kind: r.kind, memo: r.memo, at: Date.parse(r.created_at) || 0, fileId: r.file_id });
 const chargeFrom = (r) => ({ id: r.id, username: r.username, amount: r.amount, depositor: r.depositor, status: r.status, at: Date.parse(r.created_at) || 0 });
+
+const noticeFrom = (r) => ({ id: r.id, title: r.title, body: r.body, pinned: r.pinned, visible: r.visible, author: r.author, createdAt: Date.parse(r.created_at) || 0, updatedAt: r.updated_at ? Date.parse(r.updated_at) : null });

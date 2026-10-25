@@ -313,3 +313,21 @@ dialog.wide{width:min(900px,calc(100vw - 24px))}dialog.xl{width:min(1000px,calc(
   .user-chip .un,.user-chip .badge{display:none}
   .hbar{grid-template-columns:90px 1fr 30px}
 }
+
+/* ---- v5: 자료 소스 선택 / 공지 ---- */
+fieldset.src{border:1px solid var(--line);border-radius:12px;margin:10px 0;padding:10px 12px;min-width:0}
+fieldset.src legend{font-weight:700;font-size:.9rem;padding:0 6px}
+.seg{display:flex;flex-wrap:wrap;gap:6px 14px;margin-bottom:8px}
+.seg label{display:inline-flex;align-items:center;gap:5px;font-size:.88rem;cursor:pointer}
+fieldset.src input[type=text],fieldset.src input[type=url],fieldset.src input[type=file]{width:100%;max-width:100%}
+.page-h-row{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap}
+.back{display:inline-block;margin-bottom:10px;color:var(--brand);font-weight:600;background:none;border:0;padding:0;cursor:pointer}
+.linkbtn{background:none;border:0;padding:4px 6px;color:var(--brand);font-weight:600;cursor:pointer}
+.linkbtn.danger{color:var(--danger)}
+.nt-row{display:flex;align-items:center;justify-content:space-between;gap:10px;cursor:pointer}
+.nt-t{font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0}
+.notice-post{padding:22px}
+.post-title{font-size:1.25rem;margin-bottom:6px}
+.post-body{margin-top:14px;white-space:pre-line;word-break:break-word}
+.seg label{flex-direction:row!important;display:inline-flex!important;align-items:center;margin:0;white-space:nowrap}
+.seg input[type=radio]{width:auto;margin:0}

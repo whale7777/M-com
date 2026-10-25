@@ -1,4 +1,4 @@
-import { CONFIG } from './config.js?v=6';
+import { CONFIG } from './config.js?v=7';
 export const DAY = 864e5;
 // config.js 가 예전 버전이어도 동작하도록 기본 주소를 같이 둬요 (주소는 대소문자 구분!)
 export const PYNEST_URL = CONFIG.PYNEST_URL || 'https://whale7777.github.io/PYNEST/';
@@ -36,10 +36,16 @@ export function extractDriveId(input) {
   if (m) return m[1];
   return /^[\w-]{10,}$/.test(s) ? s : null;
 }
-export function triggerDownload(id) {
-  // 드라이브 확인 페이지 없이 바로 내려받는 주소
+// 드라이브 확인 페이지 없이 바로 내려받는 주소
+export const driveDownloadUrl = (id) => `https://drive.usercontent.google.com/download?id=${encodeURIComponent(id)}&export=download&confirm=t`;
+export const drivePreviewUrl = (id) => `https://drive.google.com/file/d/${encodeURIComponent(id)}/preview`;
+export const MAX_UPLOAD_MB = Number(CONFIG.MAX_UPLOAD_MB) > 0 ? Number(CONFIG.MAX_UPLOAD_MB) : 10;
+export const fmtSize = (b) => (b >= 1048576 ? (b / 1048576).toFixed(1) + 'MB' : Math.max(1, Math.round(b / 1024)) + 'KB');
+const linkify = (html) => html.replace(/(https?:\/\/[^\s<]+)/g, '<a href="$1" target="_blank" rel="noopener">$1</a>');
+export const richText = (s) => linkify(esc(s || '')).replace(/\n/g, '<br>'); // 줄바꿈 + 주소 자동 링크 (HTML 은 막혀 있어요)
+export function triggerDownload(url) {
   const a = document.createElement('a');
-  a.href = `https://drive.usercontent.google.com/download?id=${encodeURIComponent(id)}&export=download&confirm=t`;
+  a.href = url;
   a.rel = 'noopener';
   document.body.appendChild(a);
   a.click();

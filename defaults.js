@@ -1,4 +1,4 @@
-import { CONFIG } from './config.js?v=6';
+import { CONFIG } from './config.js?v=7';
 
 // 처음 한 번만 쓰이는 기본 과목·단원. 관리자 패널에서 마음대로 바꿀 수 있어.
 export const DEFAULT_TAX = [
@@ -24,6 +24,7 @@ export const DEFAULT_BANNERS = [
 // 왼쪽 메뉴 패널 (관리자 > 메뉴 탭에서 수정). type: link(링크) / heading(구분 제목) / subjects(과목·단원 자동 목록)
 export const DEFAULT_MENU = [
   { id: 'm_home', type: 'link', on: true, emoji: '🏠', label: '홈', link: '#/' },
+  { id: 'm_notice', type: 'link', on: true, emoji: '📢', label: '공지사항', link: '#/notices' },
   { id: 'm_all', type: 'link', on: true, emoji: '📚', label: '전체 자료', link: '#/list' },
   { id: 'm_h1', type: 'heading', on: true, label: '과목별 자료' },
   { id: 'm_subj', type: 'subjects', on: true, label: '과목·단원 (자동)' },
@@ -52,6 +53,7 @@ export const DEFAULT_SITE = {
   packs: DEFAULT_PACKS,
   banners: DEFAULT_BANNERS,
   menu: DEFAULT_MENU,
+  menuVer: 1,
 };
 
 export const buildPrem = (tier, ids) => {
