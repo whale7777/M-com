@@ -1,11 +1,11 @@
-import { CONFIG } from './config.js?v=14';
-import { $, $$, esc, clone, safeColor, safeLink, num, fmtDT, fmtDate, richText, ID_RE, toast, triggerDownload, DAY, PYNEST_URL } from './util.js?v=14';
-import { DEFAULT_TAX, DEFAULT_SITE, DEFAULT_MENU, DEFAULT_PLANS, DEFAULT_BANNERS } from './defaults.js?v=14';
-import { demoBackend, supabaseBackend } from './backend.js?v=14';
-import { S, subj, unitOf, findUnit, unitPath, unitIds, flatUnits, created, isNew, visibleFiles, unlocked, canMain, canSol, buyable, claimable, hasPreview } from './state.js?v=14';
-import { bindAdmin, openAdmin, adminClick } from './admin.js?v=14';
-import { B, barHTML, syncSel, bulkClick, bindBulk } from './bulk.js?v=14';
-import { pencil, startEdit, cancelEdit, commitEdit, newPageHTML, afterNewPage, filePanelHTML, openFilePanel, bindEditor } from './editor.js?v=14';
+import { CONFIG } from './config.js?v=15';
+import { $, $$, esc, clone, safeColor, safeLink, num, fmtDT, fmtDate, richText, ID_RE, toast, triggerDownload, DAY, PYNEST_URL } from './util.js?v=15';
+import { DEFAULT_TAX, DEFAULT_SITE, DEFAULT_MENU, DEFAULT_PLANS, DEFAULT_BANNERS } from './defaults.js?v=15';
+import { demoBackend, supabaseBackend } from './backend.js?v=15';
+import { S, subj, unitOf, findUnit, unitPath, unitIds, flatUnits, created, isNew, visibleFiles, unlocked, canMain, canSol, buyable, claimable, hasPreview } from './state.js?v=15';
+import { bindAdmin, openAdmin, adminClick } from './admin.js?v=15';
+import { B, barHTML, syncSel, bulkClick, bindBulk } from './bulk.js?v=15';
+import { pencil, startEdit, cancelEdit, commitEdit, newPageHTML, afterNewPage, filePanelHTML, openFilePanel, bindEditor } from './editor.js?v=15';
 
 S.DEMO = !CONFIG.SUPABASE_URL || /여기에/.test(CONFIG.SUPABASE_URL) || new URLSearchParams(location.search).has('demo');
 const demoFlags = {};
@@ -178,7 +178,7 @@ async function route() {
   } else if (head === 'points') {
     cur = 'points'; html = await pointsHTML();
   } else if (head === 'pass') {
-    cur = 'pass'; html = passHTML();
+    cur = 'pass'; html = await passHTML();
   } else if (head === 'about') {
     cur = 'about'; html = aboutHTML();
   } else if (head === 'list' || subj(head)) {
@@ -259,12 +259,12 @@ function homeHTML() {
   <section class="blk"><div class="blk-h"><h2>이렇게 이용해요</h2></div>
     <ol class="steps">
       <li><i>1</i><b>자료 고르기</b><span>과목·단원으로 찾고, 상세 페이지에서 미리보기와 구성을 확인해요.</span></li>
-      <li><i>2</i><b>받기 · 구매하기</b><span>무료는 바로 다운로드, 프리미엄은 M포인트로 구매하거나 M패스의 받기 건수로 가져가요.</span></li>
+      <li><i>2</i><b>받기 · 구매하기</b><span>무료는 바로 다운로드, 프리미엄은 M포인트로 구매하거나 M패스(계좌이체 신청)의 받기 건수로 가져가요.</span></li>
       <li><i>3</i><b>풀고 복습하기</b><span>구매하거나 받은 자료는 내 정보에서 언제든 다시 받을 수 있어요. 해설 PDF도 함께요.</span></li>
     </ol></section>
 
   <section class="promo-row">
-    <a class="promo p1" href="#/pass"><span>👑</span><div><b>M패스</b><p>기간 안에 정해진 건수만큼, 1건당 최대 33% 저렴하게</p></div><em>자세히 ›</em></a>
+    <a class="promo p1" href="#/pass"><span>👑</span><div><b>M패스</b><p>기간 안에 정해진 건수만큼, 1건당 최대 ${Math.max(0, ...(S.site.passPlans || []).map((pl) => Math.round((1 - pl.price / Math.max(pl.quota, 1) / 1800) * 100)))}% 저렴하게</p></div><em>자세히 ›</em></a>
     <a class="promo p2" href="#/points"><span>🪙</span><div><b>M포인트</b><p>필요한 세트만 골라서 구매. 한 번 사면 계속 받아요</p></div><em>충전하기 ›</em></a>
   </section>`;
 }
@@ -493,7 +493,7 @@ async function meHTML() {
       `<div class="tr"><span>${fmtDT(l.at)}</span><span><i class="pill k-${l.kind}">${KIND[l.kind] || l.kind}</i></span><span>${esc(l.memo || '')}</span><span class="${l.delta >= 0 ? 'plus' : 'minus'}">${l.delta >= 0 ? '+' : ''}${num(l.delta)}</span><span>${num(l.balance_after)}</span></div>`).join('')}</div>` : '<p class="empty-s">내역이 없어요.</p>'}</section>
   <section class="blk"><div class="blk-h"><h2>충전 신청 내역</h2></div>
     ${ch.length ? `<div class="tbl c3"><div class="tr th"><span>신청일</span><span>금액</span><span>입금자명</span><span>상태</span></div>${ch.map((c) =>
-      `<div class="tr"><span>${fmtDT(c.at)}</span><span>${num(c.amount)} P</span><span>${esc(c.depositor || '-')}</span><span><i class="pill ${STATUS[c.status]?.[1] || ''}">${STATUS[c.status]?.[0] || c.status}</i></span></div>`).join('')}</div>` : '<p class="empty-s">충전 신청이 없어요.</p>'}</section>`;
+      `<div class="tr"><span>${fmtDT(c.at)}</span><span>${chargeLabel(c)}</span><span>${esc(c.depositor || '-')}</span><span><i class="pill ${STATUS[c.status]?.[1] || ''}">${STATUS[c.status]?.[0] || c.status}</i></span></div>`).join('')}</div>` : '<p class="empty-s">충전 신청이 없어요.</p>'}</section>`;
 }
 
 let packSel = 0;
@@ -517,39 +517,61 @@ async function pointsHTML() {
     </section>
     <aside class="panel"><h2>내 현황</h2>
       ${S.user ? `<div class="me-card pts"><span>내 M포인트</span><b>🪙 ${num(S.points)} P</b></div>
-        ${ch.length ? `<h3>최근 신청</h3><div class="rows">${ch.slice(0, 5).map((c) => `<div class="row-item"><span>${num(c.amount)} P</span><small>${fmtDT(c.at)}</small><i class="pill ${STATUS[c.status]?.[1] || ''}">${STATUS[c.status]?.[0] || c.status}</i></div>`).join('')}</div>` : ''}` : '<p class="empty-s">로그인하면 내 포인트가 보여요.</p>'}
+        ${ch.length ? `<h3>최근 신청</h3><div class="rows">${ch.slice(0, 5).map((c) => `<div class="row-item"><span>${chargeLabel(c)}</span><small>${fmtDT(c.at)}</small><i class="pill ${STATUS[c.status]?.[1] || ''}">${STATUS[c.status]?.[0] || c.status}</i></div>`).join('')}</div>` : ''}` : '<p class="empty-s">로그인하면 내 포인트가 보여요.</p>'}
       <h3>자주 묻는 질문</h3>
       <details><summary>포인트는 언제 들어오나요?</summary><p>입금 확인 후 관리자가 승인하면 바로 반영돼요. 관리자가 확인하는 시간에 따라 다를 수 있어요.</p></details>
       <details><summary>구매하거나 받은 자료는 계속 받을 수 있나요?</summary><p>네. 한 번 구매하거나 M패스로 받은 자료는 내 정보에서 언제든 다시 받을 수 있어요. 패스 기간이 끝나도 그대로예요.</p></details>
-      <details><summary>M패스랑 뭐가 달라요?</summary><p>M패스는 정해진 기간 안에 정해진 건수만큼 자료를 받는 이용권이고, 1건당 가격이 M포인트 개별 구매보다 저렴해요. M패스도 M포인트로 구매해요.</p></details>
+      <details><summary>M패스랑 뭐가 달라요?</summary><p>M패스는 정해진 기간 안에 정해진 건수만큼 자료를 받는 이용권이고, 1건당 가격이 M포인트 개별 구매보다 저렴해요. M패스는 포인트와 별개로 계좌이체로 신청해요 (M패스 페이지).</p></details>
     </aside>
   </div>`;
 }
 
 const PER = (pl) => Math.round(pl.price / Math.max(pl.quota, 1));
 const SAVE = (pl) => Math.max(0, Math.round((1 - pl.price / Math.max(pl.quota, 1) / DEFAULT_PRICE_UI) * 100));
-const DEFAULT_PRICE_UI = 300; // 비교 기준: 문제 1세트 300P
-function passHTML() {
+const DEFAULT_PRICE_UI = 1800; // 비교 기준: 자료 1개 낱개 기본가 1,800P
+let planSel = '';
+const planName = (id) => (S.site.passPlans || []).find((x) => x.id === id)?.name || '';
+const chargeLabel = (c) => (c.plan ? `👑 M패스 ${esc(planName(c.plan) || '')} · ${num(c.amount)}원` : `${num(c.amount)} P`);
+async function passHTML() {
   document.title = 'M패스 — 민혁닷컴';
   const plans = (S.site.passPlans || []).filter((p) => p.price > 0 && p.quota > 0 && p.days > 0);
+  if (!plans.some((p) => p.id === planSel)) planSel = (plans[plans.length - 1] || {}).id || '';
   const cur = S.pass;
-  return `<div class="page-h"><h1>👑 M패스</h1><p>정해진 기간 안에 정해진 건수만큼 자료를 받는 이용권이에요. 낱개로 사는 것보다 1건당 더 저렴해요.</p></div>
-  ${cur.active ? `<div class="ok-box">✅ 이용 중: <b>${esc(cur.plan || 'M패스')}</b> · 남은 <b>${num(cur.left)}건</b> / 총 ${num(cur.quota)}건 · ${esc(cur.expires || '무기한')}까지<br><small>지금 또 구매하면 기간과 남은 건수가 이어져요.</small></div>` : ''}
-  <div class="plans">${plans.map((pl, i) => `<div class="plan ${i === plans.length - 1 ? 'best' : ''}">
+  let ch = [];
+  if (S.user) { try { ch = (await S.api.myCharges(S.user)).filter((c) => c.plan); } catch (e) { console.warn(e); } }
+  const pending = ch.filter((c) => c.status === 'pending').length;
+  const sel = plans.find((p) => p.id === planSel);
+  return `<div class="page-h"><h1>👑 M패스</h1><p>정해진 기간 안에 정해진 건수만큼 자료를 받는 이용권이에요. 낱개로 사는 것보다 1건당 훨씬 저렴해요.</p></div>
+  ${cur.active ? `<div class="ok-box">✅ 이용 중: <b>${esc(cur.plan || 'M패스')}</b> · 남은 <b>${num(cur.left)}건</b> / 총 ${num(cur.quota)}건 · ${esc(cur.expires || '무기한')}까지<br><small>지금 또 신청하면 기간과 남은 건수가 이어져요.</small></div>` : ''}
+  <h2 class="step-h">1. 이용권 고르기</h2>
+  <div class="plans">${plans.map((pl, i) => `<div class="plan ${i === plans.length - 1 ? 'best' : ''} ${pl.id === planSel ? 'pick' : ''}" data-planpick="${esc(pl.id)}" role="button" tabindex="0">
       ${SAVE(pl) > 0 ? `<span class="ribbon">${SAVE(pl)}% 절약</span>` : ''}
       <h3>${esc(pl.name)}</h3>
       <b class="plan-q">${num(pl.quota)}<small>건</small></b>
-      <div class="plan-p">🪙 ${num(pl.price)} P</div>
-      <small class="dim">1건당 ${num(PER(pl))}P · ${num(pl.days)}일</small>
-      <button class="btn ${i === plans.length - 1 ? 'primary' : 'ghost'} block" data-buypass="${esc(pl.id)}" type="button">M포인트로 구매</button>
+      <div class="plan-p">${num(pl.price)}원</div>
+      <small class="dim">1건당 ${num(PER(pl))}원 · ${num(pl.days)}일</small>
+      <span class="btn ${pl.id === planSel ? 'primary' : 'ghost'} block">${pl.id === planSel ? '✔ 선택됨' : '선택'}</span>
     </div>`).join('') || '<p class="empty-s">지금 판매 중인 M패스가 없어요.</p>'}</div>
+  <div class="two-col">
+    <section class="panel"><h2>2. 입금 안내 (계좌이체)</h2><div class="info-box">${nl2br(S.site.chargeInfo)}</div>
+      ${sel ? `<p class="note">입금할 금액: <b>${num(sel.price)}원</b> (${esc(sel.name)} · ${num(sel.quota)}건)</p>` : ''}
+      <h2>3. 신청 보내기</h2>
+      ${S.user ? `<form class="form" data-form="passreq"><label>입금자명<input name="depositor" maxlength="40" required placeholder="입금한 분의 이름"></label>
+        <button class="btn primary lg" type="submit" ${sel ? '' : 'disabled'}>${sel ? `M패스 ${esc(sel.name)} 신청하기` : '이용권을 먼저 골라줘'}</button>
+        <p class="note">입금이 확인되면 관리자가 승인하고, 승인 즉시 M패스가 시작돼요.${pending ? ` (현재 대기 중인 신청 ${pending}건)` : ''}</p></form>`
+      : loginPrompt('M패스 신청은 로그인 후 보낼 수 있어요.')}
+    </section>
+    <aside class="panel"><h2>최근 신청</h2>
+      ${ch.length ? `<div class="rows">${ch.slice(0, 5).map((c) => `<div class="row-item"><span>${chargeLabel(c)}</span><small>${fmtDT(c.at)}</small><i class="pill ${STATUS[c.status]?.[1] || ''}">${STATUS[c.status]?.[0] || c.status}</i></div>`).join('')}</div>` : '<p class="empty-s">아직 신청한 내역이 없어요.</p>'}
+    </aside>
+  </div>
   <div class="cmp">
     <div class="cmp-c"><h3>무료</h3><ul><li>무료 자료 다운로드</li><li>미리보기</li></ul><b>0원</b></div>
-    <div class="cmp-c"><h3>🪙 낱개 구매</h3><ul><li>필요한 세트만 골라 구매</li><li>문제 1세트 ${DEFAULT_PRICE_UI}P (자료마다 달라요)</li><li>해설 PDF 포함</li></ul><b>세트마다 결제</b><a class="btn ghost block" href="#/points">포인트 충전</a></div>
+    <div class="cmp-c"><h3>🪙 낱개 구매</h3><ul><li>필요한 세트만 골라 구매</li><li>자료 1개 약 1,500~2,200P (자료마다 달라요)</li><li>해설 PDF 포함</li></ul><b>세트마다 결제</b><a class="btn ghost block" href="#/points">포인트 충전</a></div>
     <div class="cmp-c best"><span class="ribbon">추천</span><h3>👑 M패스</h3><ul><li>기간 안에 정해진 건수 받기</li><li>해설 PDF 포함 (1건 = 자료 1개)</li><li>받은 자료는 기간이 끝나도 계속 다운로드</li></ul><b>1건당 최대 ${Math.max(0, ...plans.map(SAVE))}% 절약</b></div>
   </div>
   <div class="info-box">${nl2br(S.site.passInfo)}</div>
-  <p class="note">M패스는 M포인트로 구매해요. 포인트가 부족하면 <a href="#/points">충전</a>해줘. 문의: ${esc(S.site.contact || '')}</p>`;
+  <p class="note">문의: ${esc(S.site.contact || '')}</p>`;
 }
 
 function aboutHTML() {
@@ -559,7 +581,7 @@ function aboutHTML() {
   <section class="panel"><h2>자료는 이렇게 받아요</h2>
     <ol class="plain"><li><b>무료 자료</b> — 상세 페이지의 다운로드 버튼을 누르면 바로 PDF가 내려받아져요.</li>
       <li><b>프리미엄 자료</b> — M포인트로 구매하거나, M패스의 받기 건수를 써서 가져가요. 구매하거나 받은 자료는 계속 다시 받을 수 있어요.</li>
-      <li><b>M패스</b> — 45일·90일·6개월·12개월 중 골라 M포인트로 구매해요. 기간 안에 정해진 건수만큼 자료(문제+해설)를 받을 수 있어요.</li>
+      <li><b>M패스</b> — 45일·90일·6개월·12개월 중 골라 계좌이체로 신청해요. 기간 안에 정해진 건수만큼 자료(문제+해설)를 받을 수 있어요.</li>
       <li><b>해설 PDF</b> — 해설이 있는 자료는 구매하거나 받으면 함께 열려요.</li></ol></section>
   <section class="panel"><h2>계정</h2><p>PyNest에서 쓰는 ID와 비밀번호 그대로 로그인할 수 있어요. 민혁닷컴에서 가입해도 같은 계정이 만들어져요.</p></section>
   <section class="panel"><h2>문의</h2><p>${esc(S.site.contact || '')}</p></section>`;
@@ -815,6 +837,20 @@ function bind() {
     if (t.name === 'pack') { packSel = Number(t.value) || 0; $$('.pack').forEach((p, i) => p.classList.toggle('on', i === packSel)); }
   });
   document.addEventListener('submit', async (e) => {
+    const pf = e.target.closest('form[data-form="passreq"]');
+    if (pf) {
+      e.preventDefault();
+      const dep = pf.elements.depositor.value.trim();
+      if (!planSel) return toast('이용권을 골라줘');
+      if (!dep) return toast('입금자명을 적어줘');
+      const btn = pf.querySelector('button[type=submit]'); btn.disabled = true;
+      try {
+        const r = await S.api.requestPass(planSel, dep);
+        toast({ ok: 'M패스 신청 완료! 입금 확인 후 바로 시작해드려요 ✅', too_many: '대기 중인 신청이 너무 많아요 (최대 5건)', not_found: '이용권을 찾을 수 없어요', login: '로그인이 필요해요', blocked: '사용이 중지된 계정이에요' }[r] || '신청하지 못했어요');
+        await route();
+      } catch (err) { console.error(err); toast('신청 중 오류가 났어요 (schema.sql v7 적용 확인)'); btn.disabled = false; }
+      return;
+    }
     const form = e.target.closest('form[data-form="charge"]');
     if (!form) return;
     e.preventDefault();
@@ -833,6 +869,8 @@ function bind() {
   });
 
   document.addEventListener('click', async (e) => {
+    const pp = e.target.closest('[data-planpick]');
+    if (pp) { planSel = pp.dataset.planpick; return route(); }
     const t = e.target.closest('button');
     if (!t) return;
     const d = t.dataset;

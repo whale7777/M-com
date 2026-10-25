@@ -511,10 +511,10 @@ update public.mh_files set tier = 'premium', drive_id = null where price > 0 and
 -- 기본 M패스 플랜 (문제 1세트 300P 기준). 이미 설정돼 있으면 건드리지 않아요. 관리자 > 사이트 설정에서 바꿀 수 있어요.
 insert into public.mh_meta (key, value)
 values ('site', jsonb_build_object('passPlans', '[
-  {"id":"p45","name":"45일","days":45,"quota":15,"price":3900},
-  {"id":"p90","name":"90일","days":90,"quota":35,"price":8400},
-  {"id":"p180","name":"6개월","days":180,"quota":80,"price":17600},
-  {"id":"p365","name":"12개월","days":365,"quota":180,"price":36000}
+  {"id":"p45","name":"45일","days":45,"quota":15,"price":19900},
+  {"id":"p90","name":"90일","days":90,"quota":35,"price":39900},
+  {"id":"p180","name":"6개월","days":180,"quota":65,"price":69000},
+  {"id":"p365","name":"12개월","days":365,"quota":115,"price":119000}
 ]'::jsonb))
 on conflict (key) do update
   set value = public.mh_meta.value || jsonb_build_object('passPlans', excluded.value -> 'passPlans'), updated_at = now()
@@ -727,3 +727,113 @@ end;
 $$;
 grant execute on function public.mh_can_read_object(text) to anon, authenticated;
 grant execute on function public.mh_pass_left() to authenticated;
+
+-- =====================================================================
+-- v7: M패스도 계좌이체로 신청 (포인트 충전과 같은 방식)
+--   - mh_charges.plan 이 비어 있으면 포인트 충전, 값이 있으면 M패스 신청(amount = 입금할 원)
+--   - 관리자가 입금 확인 후 승인하면 M패스가 바로 부여돼요 (기간·건수는 이어짐)
+-- =====================================================================
+alter table public.mh_charges add column if not exists plan text not null default '';
+
+-- 내부용: 플랜대로 M패스를 부여/연장 (직접 호출 불가)
+create or replace function public.mh_apply_pass(p_uid uuid, p_name text, p_plan text, p_memo text)
+returns text
+language plpgsql security definer set search_path = public
+as $$
+declare
+  v_plan jsonb;
+  v_days int;
+  v_quota int;
+  v_today date := (now() at time zone 'Asia/Seoul')::date;
+  v_row public.mh_pass%rowtype;
+begin
+  select e into v_plan
+    from jsonb_array_elements(coalesce((select value -> 'passPlans' from public.mh_meta where key = 'site'), '[]'::jsonb)) e
+   where e ->> 'id' = p_plan limit 1;
+  if v_plan is null then return 'not_found'; end if;
+  v_days := coalesce((v_plan ->> 'days')::int, 0);
+  v_quota := coalesce((v_plan ->> 'quota')::int, 0);
+  if v_days <= 0 or v_quota <= 0 then return 'not_found'; end if;
+  select * into v_row from public.mh_pass m where m.user_id = p_uid for update;
+  if found and v_row.active and (v_row.expires is null or v_row.expires >= v_today) then
+    update public.mh_pass
+       set expires = coalesce(v_row.expires, v_today) + v_days,
+           quota = greatest(v_row.quota - v_row.used, 0) + v_quota, used = 0,
+           plan = coalesce(v_plan ->> 'name', p_plan), updated_at = now()
+     where user_id = p_uid;
+  else
+    insert into public.mh_pass (user_id, username, active, expires, memo, quota, used, plan)
+      values (p_uid, coalesce(p_name, ''), true, v_today + v_days, left(coalesce(p_memo, ''), 120), v_quota, 0, coalesce(v_plan ->> 'name', p_plan))
+      on conflict (user_id) do update
+        set active = true, expires = excluded.expires, quota = excluded.quota, used = 0,
+            plan = excluded.plan, memo = excluded.memo, updated_at = now();
+  end if;
+  return 'ok';
+end;
+$$;
+revoke all on function public.mh_apply_pass(uuid, text, text, text) from public, anon, authenticated;
+
+-- 회원: M패스 신청 (계좌이체). 결과: ok / login / blocked / not_found / too_many
+create or replace function public.mh_request_pass(p_plan text, p_depositor text)
+returns text
+language plpgsql security definer set search_path = public
+as $$
+declare
+  v_uid uuid := auth.uid();
+  v_name text;
+  v_status text;
+  v_plan jsonb;
+  v_price int;
+begin
+  if v_uid is null then return 'login'; end if;
+  select p.username, p.status into v_name, v_status from public.profiles p where p.id = v_uid;
+  if v_status = 'rejected' then return 'blocked'; end if;
+  select e into v_plan
+    from jsonb_array_elements(coalesce((select value -> 'passPlans' from public.mh_meta where key = 'site'), '[]'::jsonb)) e
+   where e ->> 'id' = p_plan limit 1;
+  if v_plan is null then return 'not_found'; end if;
+  v_price := coalesce((v_plan ->> 'price')::int, 0);
+  if v_price <= 0 then return 'not_found'; end if;
+  if (select count(*) from public.mh_charges c where c.user_id = v_uid and c.status = 'pending') >= 5 then
+    return 'too_many';
+  end if;
+  insert into public.mh_charges (user_id, username, amount, depositor, plan)
+    values (v_uid, coalesce(v_name, ''), v_price, left(coalesce(trim(p_depositor), ''), 40), p_plan);
+  return 'ok';
+end;
+$$;
+grant execute on function public.mh_request_pass(text, text) to authenticated;
+
+-- 관리자: 충전/패스 신청 승인·거절. 결과: ok / not_found / already_done / plan_missing
+create or replace function public.mh_resolve_charge(p_id uuid, p_approve boolean)
+returns text
+language plpgsql security definer set search_path = public
+as $$
+declare
+  c public.mh_charges%rowtype;
+  v_bal int;
+  v_r text;
+begin
+  if not public.mh_is_admin() then raise exception 'admin only'; end if;
+  select * into c from public.mh_charges where id = p_id for update;
+  if not found then return 'not_found'; end if;
+  if c.status <> 'pending' then return 'already_done'; end if;
+  if p_approve then
+    if c.plan <> '' then
+      v_r := public.mh_apply_pass(c.user_id, c.username, c.plan, 'M패스 계좌이체 ' || c.depositor);
+      if v_r <> 'ok' then return 'plan_missing'; end if;
+    else
+      insert into public.mh_points (user_id, username, balance) values (c.user_id, c.username, 0)
+        on conflict (user_id) do nothing;
+      select balance into v_bal from public.mh_points where user_id = c.user_id for update;
+      update public.mh_points set balance = v_bal + c.amount, updated_at = now() where user_id = c.user_id;
+      insert into public.mh_ledger (user_id, username, delta, balance_after, kind, memo)
+        values (c.user_id, c.username, c.amount, v_bal + c.amount, 'charge', left('충전 승인 ' || c.depositor, 120));
+    end if;
+    update public.mh_charges set status = 'done', resolved_at = now() where id = p_id;
+  else
+    update public.mh_charges set status = 'rejected', resolved_at = now() where id = p_id;
+  end if;
+  return 'ok';
+end;
+$$;

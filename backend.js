@@ -1,5 +1,5 @@
-import { DAY, clone, fmtDate, driveDownloadUrl, drivePreviewUrl } from './util.js?v=14';
-import { DEFAULT_TAX, DEFAULT_SITE, buildPrem } from './defaults.js?v=14';
+import { DAY, clone, fmtDate, driveDownloadUrl, drivePreviewUrl } from './util.js?v=15';
+import { DEFAULT_TAX, DEFAULT_SITE, buildPrem } from './defaults.js?v=15';
 
 const must = ({ data, error }) => { if (error) throw error; return data; };
 
@@ -123,6 +123,13 @@ export function demoBackend(flags = {}) {
     myLedger: async () => clone(ledger.filter((l) => cur && l.username === cur.username)),
     myCharges: async () => clone(charges.filter((c) => cur && c.username === cur.username)),
     myPurchases: async () => files.filter((f) => owned.has(f.id)).map((f) => ({ fileId: f.id, price: paid[f.id] ?? f.price, at: Date.now() })),
+    requestPass: async (planId, depositor) => {
+      if (!cur) return 'login';
+      const pl = (meta.site.passPlans || []).find((x) => x.id === planId);
+      if (!pl) return 'not_found';
+      charges.unshift({ id: 'c' + Date.now(), username: cur.username, amount: pl.price, depositor, plan: pl.id, status: 'pending', at: Date.now() });
+      return 'ok';
+    },
     requestCharge: async (amount, depositor) => {
       if (!cur) return 'login';
       if (!(amount >= 1 && amount <= 1000000)) return 'invalid';
@@ -173,6 +180,16 @@ export function demoBackend(flags = {}) {
       const c = charges.find((x) => x.id === id);
       if (!c) return 'not_found';
       if (c.status !== 'pending') return 'already_done';
+      if (approve && c.plan) {
+        const pl = (meta.site.passPlans || []).find((x) => x.id === c.plan);
+        if (!pl) return 'plan_missing';
+        const ex = passOf(c.username);
+        const base = ex && passInfo(ex).active ? new Date(ex.expires || Date.now()) : new Date();
+        const row = { id: 'u' + Date.now(), name: c.username, expires: fmtDate(new Date(base.getTime() + pl.days * DAY)), memo: 'M패스 계좌이체', active: true, quota: (ex ? passInfo(ex).left : 0) + pl.quota, used: 0, plan: pl.name };
+        if (ex) Object.assign(ex, row, { id: ex.id }); else mpass.push(row);
+        if (flags.pass && c.username === 'demo_user') Object.assign(dpass, row, { id: 'dp' });
+        c.status = 'done'; return 'ok';
+      }
       c.status = approve ? 'done' : 'rejected';
       if (approve) { pts[c.username] = (pts[c.username] || 0) + c.amount; log(c.username, c.amount, 'charge', '충전 승인 ' + c.depositor); }
       return 'ok';
@@ -298,6 +315,7 @@ export function supabaseBackend(sb) {
     myCharges: async (u) => must(await sb.from('mh_charges').select('*').eq('user_id', u.id).order('created_at', { ascending: false }).limit(30)).map(chargeFrom),
     myPurchases: async (u) => must(await sb.from('mh_purchases').select('*').eq('user_id', u.id).order('created_at', { ascending: false }))
       .map((r) => ({ fileId: r.file_id, price: r.price, at: Date.parse(r.created_at) || 0 })),
+    requestPass: (planId, depositor) => rpc('mh_request_pass', { p_plan: planId, p_depositor: depositor || '' }),
     requestCharge: (amount, depositor) => rpc('mh_request_charge', { p_amount: amount, p_depositor: depositor || '' }),
     addFile: async (f, ids, up = {}) => {
       const { id } = must(await sb.from('mh_files').insert({ ...toRow(f), drive_id: f.tier === 'free' && f.mainSrc !== 'upload' ? nz(ids.main) : null }).select('id').single());
@@ -353,6 +371,6 @@ export function supabaseBackend(sb) {
   };
 }
 const ledgerFrom = (r) => ({ id: r.id, username: r.username, delta: r.delta, balance_after: r.balance_after, kind: r.kind, memo: r.memo, at: Date.parse(r.created_at) || 0, fileId: r.file_id });
-const chargeFrom = (r) => ({ id: r.id, username: r.username, amount: r.amount, depositor: r.depositor, status: r.status, at: Date.parse(r.created_at) || 0 });
+const chargeFrom = (r) => ({ id: r.id, username: r.username, amount: r.amount, depositor: r.depositor, plan: r.plan || '', status: r.status, at: Date.parse(r.created_at) || 0 });
 
 const noticeFrom = (r) => ({ id: r.id, title: r.title, body: r.body, pinned: r.pinned, visible: r.visible, author: r.author, createdAt: Date.parse(r.created_at) || 0, updatedAt: r.updated_at ? Date.parse(r.updated_at) : null });

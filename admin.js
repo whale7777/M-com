@@ -1,6 +1,6 @@
-import { $, $$, esc, clone, uid, safeColor, fmtDate, fmtDT, num, ID_RE, toast, extractDriveId, saveBlob, move, DAY, MAX_UPLOAD_MB, fmtSize } from './util.js?v=14';
-import { S, subj, unitOf, created, flatUnits, unitIds } from './state.js?v=14';
-import { DEFAULT_MENU } from './defaults.js?v=14';
+import { $, $$, esc, clone, uid, safeColor, fmtDate, fmtDT, num, ID_RE, toast, extractDriveId, saveBlob, move, DAY, MAX_UPLOAD_MB, fmtSize } from './util.js?v=15';
+import { S, subj, unitOf, created, flatUnits, unitIds } from './state.js?v=15';
+import { DEFAULT_MENU } from './defaults.js?v=15';
 
 let editId = null, taxDraft = null, taxDirty = false, bannerDraft = null, bannerDirty = false, menuDraft = null, menuDirty = false;
 let passCache = [], pointsCache = [], chargesCache = [], ledgerCache = [];
@@ -179,12 +179,12 @@ const CH_ST = { pending: ['대기중', 'soon'], done: ['완료', 'ok'], rejected
 function renderAdminPoints() {
   const pend = chargesCache.filter((c) => c.status === 'pending');
   const done = chargesCache.filter((c) => c.status !== 'pending').slice(0, 8);
-  $('#chargeList').innerHTML = pend.length ? pend.map((c) => `<div class="item"><div><b>${esc(c.username)}</b> · ${num(c.amount)} P
+  $('#chargeList').innerHTML = pend.length ? pend.map((c) => `<div class="item"><div><b>${esc(c.username)}</b> · ${c.plan ? `👑 M패스 ${esc((S.site.passPlans || []).find((x) => x.id === c.plan)?.name || c.plan)} · ${num(c.amount)}원` : `${num(c.amount)} P`}
       <small>입금자명 ${esc(c.depositor || '-')} · ${fmtDT(c.at)}</small></div>
       <div class="item-btns"><button class="btn sm primary" data-cok="${esc(c.id)}" type="button">입금 확인 · 승인</button>
       <button class="btn sm danger" data-cno="${esc(c.id)}" type="button">거절</button></div></div>`).join('')
     : '<p class="note">대기 중인 충전 신청이 없어요 👍</p>';
-  $('#chargeDone').innerHTML = done.length ? done.map((c) => `<div class="item dim"><div>${esc(c.username)} · ${num(c.amount)} P <small>${fmtDT(c.at)} · ${esc(c.depositor || '-')}</small></div>
+  $('#chargeDone').innerHTML = done.length ? done.map((c) => `<div class="item dim"><div>${esc(c.username)} · ${c.plan ? `M패스 ${esc((S.site.passPlans || []).find((x) => x.id === c.plan)?.name || c.plan)} · ${num(c.amount)}원` : `${num(c.amount)} P`} <small>${fmtDT(c.at)} · ${esc(c.depositor || '-')}</small></div>
     <i class="pill ${CH_ST[c.status]?.[1] || ''}">${CH_ST[c.status]?.[0] || c.status}</i></div>`).join('') : '';
   const q = $('#ptSearch').value.trim().toLowerCase();
   const list = pointsCache.filter((p) => !q || p.username.toLowerCase().includes(q)).sort((a, b) => b.balance - a.balance);
@@ -218,8 +218,8 @@ async function resolveCharge(id, approve) {
   if (approve ? false : !confirm('이 충전 신청을 거절할까?')) return;
   try {
     const r = await S.api.resolveCharge(id, approve);
-    await refreshPoints(); renderAdminPoints(); renderDash();
-    toast(r === 'ok' ? (approve ? '승인했어! 포인트가 들어갔어 ✅' : '거절했어') : r === 'already_done' ? '이미 처리된 신청이야' : '신청을 찾을 수 없어');
+    await refreshPoints(); await refreshPass(); renderAdminPoints(); renderDash();
+    toast(r === 'ok' ? (approve ? '승인했어! 반영됐어 ✅' : '거절했어') : r === 'plan_missing' ? '이 M패스 플랜이 지금 없어요 (사이트 설정 확인)' : r === 'already_done' ? '이미 처리된 신청이야' : '신청을 찾을 수 없어');
   } catch (err) { console.error(err); toast('처리 실패'); }
 }
 
