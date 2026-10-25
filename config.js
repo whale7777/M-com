@@ -14,4 +14,7 @@ export const CONFIG = {
   // true: 민혁닷컴에서도 가입 가능 (PyNest 와 같은 계정이 만들어져요)
   // false: 가입은 PyNest 에서만, 민혁닷컴에서는 로그인만
   ALLOW_SIGNUP: true,
+
+  // 홈 배너·푸터에서 연결할 PyNest 주소 (PyNest 저장소 주소에 맞게 바꿔요)
+  PYNEST_URL: 'https://whale7777.github.io/pynest/',
 };

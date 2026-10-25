@@ -1,0 +1,46 @@
+import { CONFIG } from './config.js';
+
+// 처음 한 번만 쓰이는 기본 과목·단원. 관리자 패널에서 마음대로 바꿀 수 있어.
+export const DEFAULT_TAX = [
+  { id: 'physics', name: '물리', emoji: '⚛️', color: '#3b82f6', units: [
+    { id: 'mech', name: '역학' }, { id: 'energy', name: '일과 에너지' },
+    { id: 'em', name: '전기와 자기' }, { id: 'wave', name: '파동과 빛' }, { id: 'modern', name: '현대 물리' } ] },
+  { id: 'chem', name: '화학', emoji: '🧪', color: '#ec4899', units: [
+    { id: 'stoich', name: '화학량론' }, { id: 'bond', name: '원자와 결합' },
+    { id: 'acid', name: '산·염기' }, { id: 'redox', name: '산화·환원' }, { id: 'equil', name: '반응 속도·평형' } ] },
+  { id: 'bio', name: '생물', emoji: '🧬', color: '#10b981', units: [
+    { id: 'cell', name: '세포' }, { id: 'metab', name: '물질대사' },
+    { id: 'genetic', name: '유전' }, { id: 'homeo', name: '항상성' }, { id: 'eco', name: '생태계' } ] },
+  { id: 'earth', name: '지구과학', emoji: '🌏', color: '#f59e0b', units: [
+    { id: 'solid', name: '고체 지구' }, { id: 'atmo', name: '대기와 해양' }, { id: 'astro', name: '천문' } ] },
+];
+
+export const DEFAULT_BANNERS = [
+  { id: 'b_pass', on: true, title: 'M패스 하나로\n프리미엄 전 자료 무제한', sub: '신규 세트가 올라와도 추가 결제 없이 문제·해설 모두 다운로드', cta: 'M패스 알아보기', link: '#/pass', color: '#4f46e5', emoji: '👑' },
+  { id: 'b_point', on: true, title: '필요한 세트만 골라서\nM포인트로 구매', sub: '충전 신청 → 승인 → 바로 다운로드. 한 번 산 자료는 계속 받을 수 있어요', cta: 'M포인트 충전하기', link: '#/points', color: '#0ea5a4', emoji: '🪙' },
+  { id: 'b_pynest', on: true, title: '파이썬은 PyNest에서\n수업과 과제를 한 곳에', sub: '민혁닷컴 계정(ID)으로 그대로 로그인할 수 있어요', cta: 'PyNest 바로가기', link: CONFIG.PYNEST_URL || '#/', color: '#e8590c', emoji: '🐍' },
+];
+
+export const DEFAULT_PACKS = [
+  { p: 1000, l: '1,000원' }, { p: 3000, l: '3,000원' }, { p: 5000, l: '5,000원' }, { p: 10000, l: '10,000원' },
+];
+
+export const DEFAULT_SITE = {
+  noticeOn: false,
+  autoPass: false,
+  notice: '',
+  heroSub: '과목별로 엄선한 10~15문항 세트. 무료 자료는 누구나, 프리미엄은 M포인트 또는 M패스로.',
+  contact: CONFIG.CONTACT || '',
+  passInfo: 'M패스는 관리자가 계정(PyNest ID)을 직접 등록해줘요.\n구매·문의는 아래 연락처로 보내주세요.',
+  chargeInfo: '입금 계좌: (은행) 000-0000-0000 (예금주)\n입금 후 아래 충전 신청을 보내주면 확인 뒤 포인트를 넣어드려요.',
+  about: '민혁닷컴은 물리·화학·생물·지구과학 각 단원의 좋은 문제만 10~15문항씩 묶어 PDF로 제공하는 문제 은행이에요.\n직접 풀어보고 고른 문제로, 개념을 확인하고 실전 감각을 키우는 데 맞췄어요.',
+  packs: DEFAULT_PACKS,
+  banners: DEFAULT_BANNERS,
+};
+
+export const buildPrem = (tier, ids) => {
+  const p = {};
+  if (tier === 'premium' && ids.main) p.driveId = ids.main;
+  if (ids.solution) p.solutionId = ids.solution;
+  return p;
+};

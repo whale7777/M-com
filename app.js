@@ -1,337 +1,217 @@
 import { CONFIG } from './config.js';
+import { $, $$, esc, clone, safeColor, safeLink, num, fmtDT, ID_RE, toast, triggerDownload, DAY } from './util.js';
+import { DEFAULT_TAX, DEFAULT_SITE } from './defaults.js';
+import { demoBackend, supabaseBackend } from './backend.js';
+import { S, subj, unitOf, created, isNew, visibleFiles, unlocked, canMain, canSol, buyable } from './state.js';
+import { bindAdmin, openAdmin, adminClick } from './admin.js';
+
+S.DEMO = !CONFIG.SUPABASE_URL || /여기에/.test(CONFIG.SUPABASE_URL) || new URLSearchParams(location.search).has('demo');
+const demoFlags = {};
+const calcAdmin = (u) => !!u && ((u.role === 'admin' && u.status === 'approved') || (S.DEMO && !!window.__demoAdmin));
+const nl2br = (s) => esc(s || '').replace(/\n/g, '<br>');
+const LV = ['', '기본', '표준', '심화'];
+const lvDots = (l) => { const n = Math.min(3, Math.max(1, Number(l) || 1)); return '●'.repeat(n) + '○'.repeat(3 - n); };
+const linkAttrs = (u) => { const l = safeLink(u); return /^https?:/.test(l) ? `href="${esc(l)}" target="_blank" rel="noopener"` : `href="${esc(l)}"`; };
 
 /* =====================================================================
-   기본값
-   ===================================================================== */
-const DEMO = !CONFIG.SUPABASE_URL || /여기에/.test(CONFIG.SUPABASE_URL) || new URLSearchParams(location.search).has('demo');
-const DAY = 864e5;
-
-// 처음 한 번만 쓰이는 기본 과목·단원. 관리자 패널에서 마음대로 바꿀 수 있어.
-const DEFAULT_TAX = [
-  { id: 'physics', name: '물리', emoji: '⚛️', color: '#4da3ff', units: [
-    { id: 'mech', name: '역학' }, { id: 'energy', name: '일과 에너지' },
-    { id: 'em', name: '전기와 자기' }, { id: 'wave', name: '파동과 빛' }, { id: 'modern', name: '현대 물리' } ] },
-  { id: 'chem', name: '화학', emoji: '🧪', color: '#ff5cae', units: [
-    { id: 'stoich', name: '화학량론' }, { id: 'bond', name: '원자와 결합' },
-    { id: 'acid', name: '산·염기' }, { id: 'redox', name: '산화·환원' }, { id: 'equil', name: '반응 속도·평형' } ] },
-  { id: 'bio', name: '생물', emoji: '🧬', color: '#3dffa0', units: [
-    { id: 'cell', name: '세포' }, { id: 'metab', name: '물질대사' },
-    { id: 'genetic', name: '유전' }, { id: 'homeo', name: '항상성' }, { id: 'eco', name: '생태계' } ] },
-  { id: 'earth', name: '지구과학', emoji: '🌏', color: '#ffb84d', units: [
-    { id: 'solid', name: '고체 지구' }, { id: 'atmo', name: '대기와 해양' }, { id: 'astro', name: '천문' } ] },
-];
-const DEFAULT_SITE = {
-  noticeOn: false,
-  autoPass: false,
-  notice: '',
-  heroSub: '과목별로 엄선한 10~15문항 세트. 무료 자료는 누구나, 프리미엄은 M패스로.',
-  contact: CONFIG.CONTACT || '',
-  passInfo: 'M패스는 관리자가 계정(PyNest ID)을 직접 등록해줘요.\n구매·문의는 아래 연락처로 보내주세요.',
-};
-
-/* =====================================================================
-   유틸
-   ===================================================================== */
-const $ = (s, r = document) => r.querySelector(s);
-const $$ = (s, r = document) => [...r.querySelectorAll(s)];
-const esc = (s = '') => String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
-const clone = (x) => JSON.parse(JSON.stringify(x));
-const uid = (p) => p + Math.random().toString(36).slice(2, 7);
-const safeColor = (c) => (/^#[0-9a-f]{6}$/i.test(c || '') ? c : '#8d8da8');
-const fmtDate = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-const ID_RE = /^[a-z0-9_]{3,20}$/; // PyNest 와 같은 ID 규칙
-const buildPrem = (tier, ids) => {
-  const p = {};
-  if (tier === 'premium' && ids.main) p.driveId = ids.main;
-  if (ids.solution) p.solutionId = ids.solution;
-  return p;
-};
-
-function toast(msg) {
-  const t = $('#toast');
-  t.textContent = msg;
-  t.classList.add('show');
-  clearTimeout(toast._t);
-  toast._t = setTimeout(() => t.classList.remove('show'), 2600);
-}
-function extractDriveId(input) {
-  const s = (input || '').trim();
-  const m = s.match(/\/d\/([\w-]{10,})/) || s.match(/[?&]id=([\w-]{10,})/);
-  if (m) return m[1];
-  return /^[\w-]{10,}$/.test(s) ? s : null;
-}
-function triggerDownload(id) {
-  // 드라이브 확인 페이지 없이 바로 내려받는 주소
-  const a = document.createElement('a');
-  a.href = `https://drive.usercontent.google.com/download?id=${encodeURIComponent(id)}&export=download&confirm=t`;
-  a.rel = 'noopener';
-  document.body.appendChild(a);
-  a.click();
-  a.remove();
-}
-function saveBlob(name, text) {
-  const url = URL.createObjectURL(new Blob([text], { type: 'application/json' }));
-  const a = document.createElement('a');
-  a.href = url; a.download = name;
-  document.body.appendChild(a); a.click(); a.remove();
-  setTimeout(() => URL.revokeObjectURL(url), 2000);
-}
-
-/* =====================================================================
-   데모 백엔드 (설정 전 / 주소 뒤에 ?demo 를 붙였을 때 미리보기용 · 새로고침하면 초기화)
-   ===================================================================== */
-function demoBackend() {
-  let seq = 0;
-  const now = Date.now();
-  const mk = (subject, unit, tier, level, title, desc, count, extra = {}) => ({
-    id: 'd' + seq++, subject, unit, tier, level, title, desc, count, visible: true, pinned: false,
-    downloads: Math.floor(Math.random() * 180), createdAt: now - seq * 3 * DAY,
-    driveId: tier === 'free' ? 'DEMO' : undefined, previewId: 'DEMO', hasSolution: false, ...extra,
-  });
-  const demoFiles = [
-    mk('physics', 'energy', 'free', 1, '역학적 에너지 보존 입문 10제', '일과 에너지 기본기를 다지는 세트. 그래프 해석 포함.', 10),
-    mk('physics', 'mech', 'premium', 3, '등가속도 + 에너지 융합 킬러 12제', '계산량 있는 심화 세트. 풀이 PDF 수록.', 12, { hasSolution: true, pinned: true }),
-    mk('chem', 'stoich', 'free', 1, '몰 농도·화학량론 기본 10제', '계산 실수를 줄이는 단위 정리 중심.', 10),
-    mk('chem', 'acid', 'premium', 3, '산염기 적정 곡선 심화 13제', '그래프 추론형 문항 위주.', 13, { hasSolution: true }),
-    mk('bio', 'metab', 'free', 2, '세포 호흡 · 광합성 핵심 10제', '자료 해석형 문제로 구성.', 10),
-    mk('earth', 'atmo', 'premium', 2, '대기와 해양 순환 심화 12제', '자료 분석 · 추론 유형.', 12),
-    mk('earth', 'astro', 'free', 2, '별의 물리량과 H-R도 10제', '천문 단원 기본 자료해석.', 10),
-    mk('earth', 'astro', 'premium', 3, '외계 행성·우주론 자료해석 12제', '아직 공개 전인 초안 (숨김 상태 예시)', 12, { visible: false, hasSolution: true }),
-  ];
-  const prem = {};
-  demoFiles.forEach((f) => { prem[f.id] = buildPrem(f.tier, { main: 'DEMO', solution: f.hasSolution ? 'DEMO' : null }); });
-  const meta = { tax: clone(DEFAULT_TAX), site: clone(DEFAULT_SITE) };
-  let mpass = [
-    { id: 'u1', name: 'student01', expires: null, memo: '예시 학생 (무기한)', active: true },
-    { id: 'u2', name: 'soon01', expires: fmtDate(new Date(Date.now() + 4 * DAY)), memo: '곧 만료 예시', active: true },
-    { id: 'u3', name: 'old01', expires: '2026-01-31', memo: '만료 예시', active: true },
-  ];
-  const listeners = [];
-  const demoUser = (id) => ({ id: 'u_' + id, username: id, role: 'student', status: 'approved' });
-  const find = (id) => demoFiles.find((f) => f.id === id);
-  return {
-    onAuth: (cb) => { listeners.push(cb); cb(null); },
-    login: async (id) => listeners.forEach((l) => l(demoUser(id))),
-    signup: async (id) => listeners.forEach((l) => l(demoUser(id))),
-    logout: async () => listeners.forEach((l) => l(null)),
-    loadMeta: async () => clone(meta),
-    saveTax: async (t) => { meta.tax = clone(t); },
-    saveSite: async (s) => { meta.site = clone(s); },
-    listFiles: async (admin) => clone(demoFiles.filter((f) => admin || f.visible !== false)),
-    hasPass: async () => !!window.__demoPass,
-    getDriveId: async () => 'DEMO',
-    getPremium: async (id) => clone(prem[id] || {}),
-    addFile: async (f, ids) => {
-      const id = 'd' + Date.now();
-      demoFiles.unshift({ ...f, id, downloads: 0, pinned: false, createdAt: Date.now(), driveId: f.tier === 'free' ? ids.main : undefined });
-      prem[id] = buildPrem(f.tier, ids);
-      return id;
-    },
-    updateFile: async (id, f, ids) => {
-      Object.assign(find(id), f, { driveId: f.tier === 'free' ? ids.main : undefined });
-      prem[id] = buildPrem(f.tier, ids);
-    },
-    patchFile: async (id, patch) => { Object.assign(find(id), patch); },
-    deleteFile: async (id) => { demoFiles.splice(demoFiles.findIndex((f) => f.id === id), 1); delete prem[id]; },
-    countDownload: async (id) => { const f = find(id); if (f) f.downloads = (f.downloads || 0) + 1; },
-    listPass: async () => clone(mpass),
-    setPass: async (name, expires, memo) => {
-      if (name === 'nobody') return 'not_found';
-      const ex = mpass.find((p) => p.name === name);
-      if (ex) Object.assign(ex, { expires, memo: memo || '', active: true });
-      else mpass.push({ id: 'u' + Date.now() + mpass.length, name, expires, memo: memo || '', active: true });
-      return 'ok';
-    },
-    removePass: async (id) => { mpass = mpass.filter((p) => p.id !== id); },
-    exportAll: async () => clone({ files: demoFiles, premium: prem, mpass }),
-  };
-}
-
-/* =====================================================================
-   Supabase 백엔드 — PyNest 와 같은 프로젝트라서 계정(ID·비밀번호)이 그대로 연동돼요
-   ===================================================================== */
-async function supabaseBackend() {
-  const { createClient } = await import('https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm');
-  // PyNest 와 설정을 똑같이 쓰면, 같은 주소(github.io)에서는 로그인 세션도 같이 쓰게 돼요.
-  const sb = createClient(CONFIG.SUPABASE_URL, CONFIG.SUPABASE_ANON_KEY);
-  const emailOf = (id) => `${id.toLowerCase()}@pyclass.site`; // PyNest 와 같은 규칙
-  const must = ({ data, error }) => { if (error) throw error; return data; };
-  const premRow = (fileId, prem) => ({ file_id: fileId, drive_id: prem.driveId || null, solution_id: prem.solutionId || null });
-  const fromRow = (r) => ({
-    id: r.id, title: r.title, subject: r.subject, unit: r.unit, level: r.level, tier: r.tier, count: r.count,
-    desc: r.desc, previewId: r.preview_id, hasSolution: r.has_solution, visible: r.visible, pinned: r.pinned,
-    downloads: r.downloads, driveId: r.drive_id || undefined, createdAt: Date.parse(r.created_at) || 0,
-  });
-  const toRow = (f) => ({
-    title: f.title, subject: f.subject, unit: f.unit, level: f.level, tier: f.tier, count: f.count,
-    desc: f.desc, preview_id: f.previewId, has_solution: f.hasSolution, visible: f.visible,
-  });
-  const profileOf = async (session) => {
-    const uid = session.user.id;
-    try {
-      const { data } = await sb.from('profiles').select('id,username,role,status').eq('id', uid).maybeSingle();
-      if (data) return { id: uid, username: data.username, role: data.role, status: data.status };
-    } catch { /* 아래 기본값 사용 */ }
-    return { id: uid, username: session.user.user_metadata?.username || '회원', role: 'student', status: 'pending' };
-  };
-
-  return {
-    onAuth: (cb) => {
-      let last;
-      sb.auth.onAuthStateChange((event, session) => {
-        const uid = session?.user?.id || null;
-        if (uid === last) return; // 토큰 갱신 등으로 같은 사람이 다시 알려질 때는 무시
-        last = uid;
-        // 이 콜백 안에서 바로 다른 supabase 호출을 하면 멈출 수 있어서 한 박자 뒤에 실행
-        setTimeout(async () => cb(uid ? await profileOf(session) : null), 0);
-      });
-    },
-    login: async (id, pw) => {
-      const { error } = await sb.auth.signInWithPassword({ email: emailOf(id), password: pw });
-      if (error) throw new Error('ID 또는 비밀번호가 맞지 않아요');
-    },
-    signup: async (id, pw) => {
-      const { error } = await sb.auth.signUp({ email: emailOf(id), password: pw, options: { data: { username: id.toLowerCase() } } });
-      if (error) throw new Error(/registered|already|exists/i.test(error.message) ? '이미 있는 ID예요' : '가입에 실패했어요: ' + error.message);
-    },
-    logout: () => sb.auth.signOut(),
-
-    loadMeta: async () => {
-      const by = Object.fromEntries(must(await sb.from('mh_meta').select('key,value')).map((r) => [r.key, r.value]));
-      return { tax: by.taxonomy?.subjects ?? null, site: by.site ?? null };
-    },
-    saveTax: async (t) => { must(await sb.from('mh_meta').upsert({ key: 'taxonomy', value: { subjects: t }, updated_at: new Date().toISOString() })); },
-    saveSite: async (s) => { must(await sb.from('mh_meta').upsert({ key: 'site', value: s, updated_at: new Date().toISOString() })); },
-
-    listFiles: async () => must(await sb.from('mh_files').select('*')).map(fromRow), // 숨김 자료는 서버가 관리자에게만 줌
-    hasPass: async () => must(await sb.rpc('mh_has_pass')) === true,
-    getPremium: async (id) => {
-      const r = must(await sb.from('mh_premium').select('drive_id,solution_id').eq('file_id', id).maybeSingle());
-      return r ? { driveId: r.drive_id || undefined, solutionId: r.solution_id || undefined } : {};
-    },
-    getDriveId: async (f, kind) => {
-      if (kind === 'main' && f.tier === 'free') return f.driveId;
-      const r = must(await sb.from('mh_premium').select('drive_id,solution_id').eq('file_id', f.id).maybeSingle()); // M패스 없으면 서버가 안 줌
-      const id = r && (kind === 'solution' ? r.solution_id : r.drive_id);
-      if (!id) throw new Error('파일 ID 없음');
-      return id;
-    },
-    addFile: async (f, ids) => {
-      const { id } = must(await sb.from('mh_files').insert({ ...toRow(f), drive_id: f.tier === 'free' ? ids.main : null }).select('id').single());
-      const prem = buildPrem(f.tier, ids);
-      if (Object.keys(prem).length) {
-        const { error } = await sb.from('mh_premium').insert(premRow(id, prem));
-        if (error) { await sb.from('mh_files').delete().eq('id', id); throw error; }
-      }
-      return id;
-    },
-    updateFile: async (id, f, ids) => {
-      must(await sb.from('mh_files').update({ ...toRow(f), drive_id: f.tier === 'free' ? ids.main : null, updated_at: new Date().toISOString() }).eq('id', id));
-      const prem = buildPrem(f.tier, ids);
-      if (Object.keys(prem).length) must(await sb.from('mh_premium').upsert(premRow(id, prem)));
-      else must(await sb.from('mh_premium').delete().eq('file_id', id));
-    },
-    patchFile: async (id, patch) => { must(await sb.from('mh_files').update(patch).eq('id', id)); },
-    deleteFile: async (id) => { must(await sb.from('mh_files').delete().eq('id', id)); }, // 프리미엄 링크는 같이 삭제됨
-    countDownload: async (id) => { try { await sb.rpc('mh_count_download', { p_id: id }); } catch { /* 통계라서 무시 */ } },
-
-    listPass: async () => must(await sb.from('mh_pass').select('*').order('username'))
-      .map((r) => ({ id: r.user_id, name: r.username, active: r.active, expires: r.expires, memo: r.memo })),
-    setPass: async (name, expires, memo) => must(await sb.rpc('mh_grant_pass', { p_username: name, p_expires: expires || null, p_memo: memo || '' })),
-    removePass: async (id) => { must(await sb.from('mh_pass').delete().eq('user_id', id)); },
-
-    exportAll: async () => {
-      const [f, p, m] = await Promise.all([sb.from('mh_files').select('*'), sb.from('mh_premium').select('*'), sb.from('mh_pass').select('*')]);
-      return { files: must(f), premium: must(p), mpass: must(m) };
-    },
-  };
-}
-
-/* =====================================================================
-   상태
-   ===================================================================== */
-let api, user = null, isAdmin = false, hasPass = false;
-let tax = clone(DEFAULT_TAX), site = { ...DEFAULT_SITE }, files = [], passCache = [];
-let editId = null, taxDraft = null, taxDirty = false;
-const view = { s: 'all', u: 'all', tier: 'all', sort: 'new' };
-
-const subj = (id) => tax.find((s) => s.id === id);
-const unitOf = (f) => (subj(f.subject)?.units || []).find((u) => u.id === f.unit);
-const created = (f) => Number(f.createdAt) || 0;
-const isNew = (f) => created(f) > 0 && Date.now() - created(f) < 7 * DAY;
-const calcAdmin = (u) => !!u && ((u.role === 'admin' && u.status === 'approved') || (DEMO && !!window.__demoAdmin));
-
-function passStatus(p) {
-  if (p.active === false) return { k: 'off', label: '비활성' };
-  if (!p.expires) return { k: 'ok', label: '무기한' };
-  const left = Math.ceil((new Date(p.expires + 'T23:59:59') - Date.now()) / DAY);
-  if (left < 0) return { k: 'exp', label: '만료됨' };
-  return { k: left <= 7 ? 'soon' : 'ok', label: `D-${left}` };
-}
-const passActive = (p) => ['ok', 'soon'].includes(passStatus(p).k);
-
-/* =====================================================================
-   공개 화면 렌더링
+   공통 조각 (헤더 · 카테고리 · 푸터)
    ===================================================================== */
 function renderHeader() {
-  $('#btnLogin').classList.toggle('hidden', !!user);
-  $('#btnLogout').classList.toggle('hidden', !user);
-  $('#btnAdmin').classList.toggle('hidden', !isAdmin);
+  $('#btnLogin').classList.toggle('hidden', !!S.user);
+  $('#btnLogout').classList.toggle('hidden', !S.user);
+  $('#btnAdmin').classList.toggle('hidden', !S.isAdmin);
   const chip = $('#userChip');
-  chip.classList.toggle('hidden', !user);
-  if (user) {
-    chip.innerHTML = `<span>${esc(user.username)}</span>` +
-      (isAdmin ? '<i class="badge admin">ADMIN</i>' : '') + (hasPass && !isAdmin ? '<i class="badge m">M PASS</i>' : '');
+  chip.classList.toggle('hidden', !S.user);
+  if (S.user) {
+    chip.innerHTML = `<span class="un">${esc(S.user.username)}</span>` +
+      (S.isAdmin ? '<i class="badge admin">ADMIN</i>' : S.hasPass ? '<i class="badge m">M PASS</i>' : '') +
+      `<b class="pts">🪙 ${num(S.points)} P</b>`;
   }
 }
 
-function renderSiteText() {
-  const on = site.noticeOn && site.notice;
+function renderChrome() {
+  const on = S.site.noticeOn && S.site.notice;
   $('#notice').classList.toggle('hidden', !on);
-  $('#notice').textContent = site.notice || '';
-  $('#heroSub').innerHTML = esc(site.heroSub || '').replace(/M패스/g, '<b>M패스</b>');
-  $('#contact').textContent = site.contact || '';
-  $('#passContact').textContent = site.contact || '';
-  $('#passInfo').textContent = site.passInfo || '';
+  $('#notice').textContent = S.site.notice || '';
+  $('#contact').textContent = S.site.contact || '';
   $('#year').textContent = new Date().getFullYear();
+  $('#aboutShort').textContent = (S.site.about || '').split('\n')[0];
+  $('#ftPynest').href = safeLink(CONFIG.PYNEST_URL || '#/');
+  const cat = (href, label, on, units) =>
+    `<div class="cat ${on ? 'on' : ''}"><a href="${href}">${label}</a>${units ? `<div class="drop">${units}</div>` : ''}</div>`;
+  $('#cats').innerHTML =
+    cat('#/', '홈', route.cur === 'home') + cat('#/list', '전체 자료', route.cur === 'list' && view.s === 'all') +
+    S.tax.map((s) => cat(`#/${encodeURIComponent(s.id)}`, `${esc(s.emoji)} ${esc(s.name)}`, route.cur === 'list' && view.s === s.id,
+      (s.units || []).map((u) => `<a href="#/${encodeURIComponent(s.id)}/${encodeURIComponent(u.id)}">${esc(u.name)}</a>`).join(''))).join('') +
+    '<span class="cat-sp"></span>' + cat('#/pass', '👑 M패스', route.cur === 'pass') + cat('#/points', '🪙 M포인트', route.cur === 'points') + cat('#/about', '이용안내', route.cur === 'about');
 }
 
-function renderStats() {
-  const pub = files.filter((f) => f.visible !== false);
-  const free = pub.filter((f) => f.tier === 'free').length;
-  const total = pub.reduce((n, f) => n + (Number(f.count) || 0), 0);
-  $('#stats').innerHTML =
-    `<div class="stat"><b>${pub.length}</b><span>PDF 세트</span></div>` +
-    `<div class="stat"><b>${total}</b><span>총 문항</span></div>` +
-    `<div class="stat"><b>${free}</b><span>무료 공개</span></div>`;
+/* =====================================================================
+   자료 카드
+   ===================================================================== */
+function coverHTML(f, big = false) {
+  const sj = subj(f.subject), un = unitOf(f);
+  return `<div class="cover ${big ? 'big' : ''}" style="--c:${safeColor(sj?.color)}"><div class="sheet">
+    <i class="sh-bar"></i><b>${esc(sj ? sj.emoji : '📘')}</b><span class="sh-t">${esc(un ? un.name : sj ? sj.name : '미분류')}</span>
+    <em>${Number(f.count) || '-'}문항</em><u></u><u></u><u></u></div></div>`;
 }
+function priceTag(f) {
+  if (S.isAdmin) return `<span class="pt own">관리자</span>${f.price ? `<span class="pt price">🪙 ${num(f.price)}P</span>` : ''}`;
+  if (f.tier === 'free') return `<span class="pt free">무료</span>${f.hasSolution && f.price && !unlocked(f) ? `<span class="pt sub">해설 ${num(f.price)}P</span>` : ''}`;
+  if (unlocked(f)) return `<span class="pt own">${S.hasPass && !S.owned.has(f.id) ? 'M패스 이용중' : '구매함'}</span>`;
+  return Number(f.price) > 0 ? `<span class="pt price">🪙 ${num(f.price)}P</span>` : '<span class="pt pass">M패스 전용</span>';
+}
+function cardHTML(f) {
+  const sj = subj(f.subject), un = unitOf(f);
+  return `<a class="card ${f.visible === false ? 'draft' : ''}" href="#/f/${encodeURIComponent(f.id)}">
+    <div class="c-img">${coverHTML(f)}
+      <span class="c-badges">${f.pinned ? '<i class="bd pin">📌</i>' : ''}${isNew(f) ? '<i class="bd new">NEW</i>' : ''}${f.visible === false ? '<i class="bd hid">숨김</i>' : ''}${f.hasSolution ? '<i class="bd sol">해설</i>' : ''}</span></div>
+    <div class="c-body">
+      <div class="c-tag" style="--c:${safeColor(sj?.color)}">${esc(sj ? sj.name : '미분류')}${un ? ' · ' + esc(un.name) : ''}</div>
+      <h3>${esc(f.title)}</h3>
+      <div class="c-meta"><span title="난이도">${lvDots(f.level)} ${LV[Math.min(3, Math.max(1, Number(f.level) || 1))]}</span><span>${Number(f.count) || '-'}문항</span><span>⬇ ${num(f.downloads)}</span></div>
+      <div class="c-foot">${priceTag(f)}</div>
+    </div></a>`;
+}
+const gridOf = (list) => `<div class="grid">${list.map(cardHTML).join('')}</div>`;
+const section = (title, more, list, cls = '') => list.length
+  ? `<section class="blk ${cls}"><div class="blk-h"><h2>${title}</h2>${more ? `<a class="more" href="${more}">더보기 ›</a>` : ''}</div>${gridOf(list)}</section>` : '';
 
-function renderNav() {
-  const cnt = (pred) => files.filter(pred).length;
-  const chip = (href, label, n, on, cls = '') =>
-    `<a class="chip ${cls} ${on ? 'on' : ''}" href="${href}">${label} <i>${n}</i></a>`;
-  $('#chips').innerHTML = chip('#/', '전체', files.length, view.s === 'all') +
-    tax.map((s) => chip(`#/${encodeURIComponent(s.id)}`, `${esc(s.emoji)} ${esc(s.name)}`, cnt((f) => f.subject === s.id), view.s === s.id)).join('');
+/* =====================================================================
+   라우터   #/ (홈) · #/list · #/<과목>[/<단원>] · #/f/<id> · #/me · #/points · #/pass · #/about
+   ===================================================================== */
+const view = { s: 'all', u: 'all', tier: 'all', sort: 'new', q: '' };
+let tok = 0, carouselTimer = null;
 
-  const sj = subj(view.s);
-  const ub = $('#unitChips');
-  if (sj && sj.units && sj.units.length) {
-    ub.classList.remove('hidden');
-    const base = `#/${encodeURIComponent(sj.id)}`;
-    ub.innerHTML = chip(base, '전체 단원', cnt((f) => f.subject === sj.id), view.u === 'all', 'sm') +
-      sj.units.map((u) => chip(`${base}/${encodeURIComponent(u.id)}`, esc(u.name), cnt((f) => f.subject === sj.id && f.unit === u.id), view.u === u.id, 'sm')).join('');
+function parseHash() {
+  const raw = location.hash.replace(/^#\/?/, '');
+  const [path, qs] = raw.split('?');
+  const parts = path.split('/').filter(Boolean).map((x) => { try { return decodeURIComponent(x); } catch { return x; } });
+  return { parts, q: Object.fromEntries(new URLSearchParams(qs || '')) };
+}
+function navigate(h) { if (location.hash === h) route(); else location.hash = h; }
+
+async function route() {
+  const my = ++tok;
+  clearInterval(carouselTimer);
+  const { parts, q } = parseHash();
+  const head = parts[0] || '';
+  let cur = 'home', html = '', post = null;
+  Object.assign(view, { s: 'all', u: 'all', tier: 'all', sort: 'new', q: '' });
+
+  if (head === 'f') {
+    cur = 'detail'; html = detailHTML(parts[1]);
+  } else if (head === 'me') {
+    cur = 'me'; html = await meHTML();
+  } else if (head === 'points') {
+    cur = 'points'; html = await pointsHTML();
+  } else if (head === 'pass') {
+    cur = 'pass'; html = passHTML();
+  } else if (head === 'about') {
+    cur = 'about'; html = aboutHTML();
+  } else if (head === 'list' || subj(head)) {
+    cur = 'list';
+    if (subj(head)) {
+      view.s = head;
+      if (parts[1] && (subj(head).units || []).some((u) => u.id === parts[1])) view.u = parts[1];
+    }
+    if (['all', 'free', 'premium'].includes(q.tier)) view.tier = q.tier;
+    if (['new', 'pop', 'easy', 'hard', 'title'].includes(q.sort)) view.sort = q.sort;
+    view.q = (q.q || '').slice(0, 60);
+    html = listHTML();
+    post = () => { $('#tierSel').value = view.tier; $('#sortSel').value = view.sort; renderListGrid(); };
   } else {
-    ub.classList.add('hidden');
-    ub.innerHTML = '';
+    html = homeHTML(); post = startCarousel;
   }
+  if (my !== tok) return; // 더 최신 이동이 있으면 버림
+  route.cur = cur;
+  $('#view').innerHTML = html;
+  $('#gq').value = cur === 'list' ? view.q : $('#gq').value;
+  renderChrome();
+  if (post) post();
+  window.scrollTo?.(0, 0);
+}
+route.cur = 'home';
 
-  const un = sj && (sj.units || []).find((u) => u.id === view.u);
-  $('#secTitle').innerHTML = sj ? `${esc(sj.emoji)} ${esc(sj.name)}${un ? ` <span>› ${esc(un.name)}</span>` : ''}` : '전체 자료';
-  document.title = sj ? `${sj.name}${un ? ' · ' + un.name : ''} — 민혁닷컴` : '민혁닷컴 — 과학 문제 PDF';
+/* =====================================================================
+   홈
+   ===================================================================== */
+function bannerHTML(b, i) {
+  return `<a class="slide ${i === 0 ? 'on' : ''}" style="--c:${safeColor(b.color)}" ${linkAttrs(b.link)}>
+    <div class="s-txt"><h2>${nl2br(b.title)}</h2><p>${esc(b.sub || '')}</p>${b.cta ? `<span class="s-cta">${esc(b.cta)} →</span>` : ''}</div>
+    <div class="s-emoji" aria-hidden="true">${esc(b.emoji || '✨')}</div></a>`;
+}
+function acctHTML() {
+  if (!S.user) {
+    return `<h3>로그인하고 시작해요</h3><p>PyNest 계정 그대로 로그인할 수 있어요.<br>M포인트로 프리미엄 자료를 구매해요.</p>
+      <div class="a-btns"><button class="btn primary block" data-act="login" type="button">로그인</button>
+      ${CONFIG.ALLOW_SIGNUP ? '<button class="btn ghost block" data-act="signup" type="button">회원가입</button>' : ''}</div>`;
+  }
+  return `<div class="a-hi"><b>${esc(S.user.username)}</b>님 ${S.isAdmin ? '<i class="badge admin">ADMIN</i>' : S.hasPass ? '<i class="badge m">M PASS</i>' : ''}</div>
+    <div class="a-pts"><span>내 M포인트</span><b>🪙 ${num(S.points)} P</b></div>
+    <div class="a-btns"><a class="btn primary block" href="#/points">충전하기</a><a class="btn ghost block" href="#/me">내 자료 · 내역</a></div>`;
+}
+function homeHTML() {
+  const pub = visibleFiles();
+  const banners = (S.site.banners || []).filter((b) => b.on !== false);
+  const sets = pub.length, qn = pub.reduce((n, f) => n + (Number(f.count) || 0), 0);
+  const free = pub.filter((f) => f.tier === 'free').length, dl = pub.reduce((n, f) => n + (f.downloads || 0), 0);
+  const by = (fn) => [...pub].sort(fn);
+  return `
+  <section class="hero-row">
+    <div class="carousel" id="carousel">
+      <div class="slides">${banners.length ? banners.map(bannerHTML).join('') : bannerHTML({ title: '민혁닷컴', sub: S.site.heroSub, color: '#2f5bff', emoji: '🔬' }, 0)}</div>
+      ${banners.length > 1 ? `<div class="dots">${banners.map((_, i) => `<button type="button" class="dot ${i === 0 ? 'on' : ''}" data-dot="${i}" aria-label="배너 ${i + 1}"></button>`).join('')}</div>` : ''}
+    </div>
+    <aside class="acct" id="acct">${acctHTML()}</aside>
+  </section>
+
+  <section class="stats-strip">
+    <div><b>${num(sets)}</b><span>PDF 세트</span></div><div><b>${num(qn)}</b><span>엄선 문항</span></div>
+    <div><b>${num(free)}</b><span>무료 공개</span></div><div><b>${num(dl)}</b><span>누적 다운로드</span></div>
+  </section>
+
+  <section class="blk"><div class="blk-h"><h2>과목별로 찾기</h2></div>
+    <div class="subj-tiles">${S.tax.map((s) => {
+      const n = pub.filter((f) => f.subject === s.id).length;
+      return `<a class="tile" style="--c:${safeColor(s.color)}" href="#/${encodeURIComponent(s.id)}"><span class="t-emo">${esc(s.emoji)}</span><b>${esc(s.name)}</b><small>${n}개 · ${(s.units || []).length}개 단원</small></a>`;
+    }).join('')}</div></section>
+
+  ${section('🔥 지금 인기 있는 자료', '#/list?sort=pop', by((a, b) => (b.downloads || 0) - (a.downloads || 0)).slice(0, 8))}
+  ${section('🆕 새로 올라왔어요', '#/list?sort=new', by((a, b) => created(b) - created(a)).slice(0, 8))}
+  ${section('🎁 무료로 받아가세요', '#/list?tier=free', by((a, b) => (b.downloads || 0) - (a.downloads || 0)).filter((f) => f.tier === 'free').slice(0, 4))}
+
+  <section class="blk"><div class="blk-h"><h2>이렇게 이용해요</h2></div>
+    <ol class="steps">
+      <li><i>1</i><b>자료 고르기</b><span>과목·단원으로 찾고, 상세 페이지에서 미리보기와 구성을 확인해요.</span></li>
+      <li><i>2</i><b>받기 · 구매하기</b><span>무료는 바로 다운로드, 프리미엄은 M포인트로 구매하거나 M패스로 열어요.</span></li>
+      <li><i>3</i><b>풀고 복습하기</b><span>구매한 자료는 내 정보에서 언제든 다시 받을 수 있어요. 해설 PDF도 함께요.</span></li>
+    </ol></section>
+
+  <section class="promo-row">
+    <a class="promo p1" href="#/pass"><span>👑</span><div><b>M패스</b><p>프리미엄 전체 자료 + 해설을 기간 동안 무제한으로</p></div><em>자세히 ›</em></a>
+    <a class="promo p2" href="#/points"><span>🪙</span><div><b>M포인트</b><p>필요한 세트만 골라서 구매. 한 번 사면 계속 받아요</p></div><em>충전하기 ›</em></a>
+  </section>`;
+}
+function startCarousel() {
+  const slides = $$('#carousel .slide');
+  if (slides.length < 2) return;
+  let i = 0;
+  const show = (n) => {
+    i = (n + slides.length) % slides.length;
+    slides.forEach((s, k) => s.classList.toggle('on', k === i));
+    $$('#carousel .dot').forEach((d, k) => d.classList.toggle('on', k === i));
+  };
+  show.go = show;
+  startCarousel.show = show;
+  carouselTimer = setInterval(() => show(i + 1), 5500);
 }
 
+/* =====================================================================
+   목록
+   ===================================================================== */
 function currentList() {
-  const q = $('#search').value.trim().toLowerCase();
+  const q = view.q.trim().toLowerCase();
   const sorters = {
     new: (a, b) => created(b) - created(a),
     pop: (a, b) => (b.downloads || 0) - (a.downloads || 0),
@@ -339,378 +219,252 @@ function currentList() {
     hard: (a, b) => (b.level || 0) - (a.level || 0),
     title: (a, b) => String(a.title).localeCompare(String(b.title), 'ko'),
   };
-  return files
+  return S.files
     .filter((f) => (view.s === 'all' || f.subject === view.s) && (view.u === 'all' || f.unit === view.u) &&
       (view.tier === 'all' || f.tier === view.tier) &&
-      (!q || `${f.title} ${f.desc || ''} ${unitOf(f)?.name || ''}`.toLowerCase().includes(q)))
+      (!q || `${f.title} ${f.desc || ''} ${unitOf(f)?.name || ''} ${subj(f.subject)?.name || ''}`.toLowerCase().includes(q)))
     .sort((a, b) => (b.pinned ? 1 : 0) - (a.pinned ? 1 : 0) || sorters[view.sort](a, b));
 }
-
-function cardHTML(f) {
-  const sj = subj(f.subject);
-  const un = unitOf(f);
-  const id = esc(f.id);
-  const canMain = f.tier === 'free' || hasPass || isAdmin;
-  const canSol = hasPass || isAdmin;
-  const lvl = Math.min(3, Math.max(1, Number(f.level) || 1));
-  const main = canMain
-    ? `<button class="btn dl" data-dl="${id}">⬇ ${f.tier === 'free' ? '무료 다운로드' : 'M패스 다운로드'}</button>`
-    : '<button class="btn locked" data-lock>🔒 M패스 필요</button>';
-  const sub = [];
-  if (f.previewId) sub.push(`<button class="btn mini" data-prev="${id}">👁 미리보기</button>`);
-  if (f.hasSolution) sub.push(canSol
-    ? `<button class="btn mini" data-dl="${id}" data-kind="solution">📝 해설 받기</button>`
-    : '<button class="btn mini muted" data-lock>🔒 해설 (M패스)</button>');
-  return `<article class="card ${f.visible === false ? 'draft' : ''}" style="--c:${safeColor(sj?.color)}">
-    <div class="card-top">
-      <span class="tag">${esc(sj ? sj.emoji + ' ' + sj.name : '미분류')}${un ? ' · ' + esc(un.name) : ''}</span>
-      <span class="badges">${f.pinned ? '📌' : ''}${isNew(f) ? '<i class="new">NEW</i>' : ''}${f.visible === false ? '<i class="draft-b">숨김</i>' : ''}
-        <span class="tier ${f.tier}">${f.tier === 'free' ? 'FREE' : 'M PASS'}</span></span>
-    </div>
-    <h3>${esc(f.title)}</h3>
-    <p>${esc(f.desc || '')}</p>
-    <div class="meta"><span class="lv" title="난이도">${'●'.repeat(lvl)}${'○'.repeat(3 - lvl)}</span> · ${Number(f.count) || '-'}문항 · PDF · ⬇ ${f.downloads || 0}</div>
-    ${main}
-    ${sub.length ? `<div class="btns">${sub.join('')}</div>` : ''}
-  </article>`;
+function listHash() {
+  const base = view.s === 'all' ? '#/list' : `#/${encodeURIComponent(view.s)}${view.u !== 'all' ? '/' + encodeURIComponent(view.u) : ''}`;
+  const p = new URLSearchParams();
+  if (view.tier !== 'all') p.set('tier', view.tier);
+  if (view.sort !== 'new') p.set('sort', view.sort);
+  if (view.q) p.set('q', view.q);
+  return base + (p.toString() ? '?' + p : '');
 }
-
-function renderGrid() {
+function listHTML() {
+  const sj = subj(view.s), un = sj && (sj.units || []).find((u) => u.id === view.u);
+  const cnt = (pred) => S.files.filter(pred).length;
+  const side = `<a class="sl ${view.s === 'all' ? 'on' : ''}" href="#/list">전체 <i>${S.files.length}</i></a>` + S.tax.map((s) => {
+    const open = view.s === s.id;
+    return `<div class="sg"><a class="sl ${open && view.u === 'all' ? 'on' : ''}" href="#/${encodeURIComponent(s.id)}">${esc(s.emoji)} ${esc(s.name)} <i>${cnt((f) => f.subject === s.id)}</i></a>` +
+      (open ? (s.units || []).map((u) => `<a class="sl sub ${view.u === u.id ? 'on' : ''}" href="#/${encodeURIComponent(s.id)}/${encodeURIComponent(u.id)}">${esc(u.name)} <i>${cnt((f) => f.subject === s.id && f.unit === u.id)}</i></a>`).join('') : '') + '</div>';
+  }).join('');
+  document.title = `${sj ? sj.name + (un ? ' · ' + un.name : '') : view.q ? `'${view.q}' 검색` : '전체 자료'} — 민혁닷컴`;
+  return `<div class="crumb"><a href="#/">홈</a> › ${sj ? `<a href="#/${encodeURIComponent(sj.id)}">${esc(sj.name)}</a>` : '<span>전체 자료</span>'}${un ? ` › <span>${esc(un.name)}</span>` : ''}</div>
+  <div class="list-layout">
+    <aside class="side"><details open><summary>과목 · 단원</summary>${side}</details></aside>
+    <div class="list-main">
+      <div class="list-head"><h1>${sj ? `${esc(sj.emoji)} ${esc(sj.name)}${un ? ` <small>› ${esc(un.name)}</small>` : ''}` : view.q ? `‘${esc(view.q)}’ 검색 결과` : '전체 자료'} <span id="listCount"></span></h1>
+        <div class="controls">
+          <select id="tierSel" aria-label="등급"><option value="all">모든 자료</option><option value="free">무료</option><option value="premium">프리미엄</option></select>
+          <select id="sortSel" aria-label="정렬"><option value="new">최신순</option><option value="pop">인기순</option><option value="easy">쉬운 순</option><option value="hard">어려운 순</option><option value="title">제목순</option></select>
+          <input id="lq" type="search" placeholder="이 목록에서 검색" value="${esc(view.q)}">
+        </div></div>
+      <div id="listGrid"></div>
+    </div></div>`;
+}
+function renderListGrid() {
   const list = currentList();
-  $('#empty').classList.toggle('hidden', list.length > 0);
-  $('#secCount').textContent = `${list.length}개`;
-  $('#grid').innerHTML = list.map(cardHTML).join('');
-}
-
-function renderAll() {
-  renderHeader(); renderSiteText(); renderStats(); renderNav(); renderGrid();
-}
-
-/* 주소(#/과목/단원) ↔ 화면 상태 */
-function applyHash() {
-  const parts = location.hash.replace(/^#\/?/, '').split('/').filter(Boolean).map(decodeURIComponent);
-  let s = parts[0] || 'all', u = parts[1] || 'all';
-  if (s !== 'all' && !subj(s)) { s = 'all'; u = 'all'; }
-  if (u !== 'all' && !(subj(s)?.units || []).some((x) => x.id === u)) u = 'all';
-  view.s = s; view.u = u;
-}
-
-async function loadFiles() {
-  try { files = await api.listFiles(isAdmin); } catch (e) { console.error(e); toast('자료를 불러오지 못했어'); files = []; }
-  renderAll();
+  $('#listCount').textContent = `${list.length}개`;
+  $('#listGrid').innerHTML = list.length ? gridOf(list) : '<p class="empty">조건에 맞는 자료가 아직 없어요 🥲<br><a href="#/list">전체 자료 보기</a></p>';
+  try { history.replaceState(null, '', listHash()); } catch { /* 무시 */ }
 }
 
 /* =====================================================================
-   다운로드 / 미리보기
+   상세
+   ===================================================================== */
+function detailHTML(id) {
+  const f = S.files.find((x) => x.id === id);
+  if (!f) { document.title = '자료를 찾을 수 없어요 — 민혁닷컴'; return '<div class="notfound"><h2>자료를 찾을 수 없어요</h2><p>삭제됐거나 비공개로 바뀐 자료일 수 있어요.</p><a class="btn primary" href="#/list">전체 자료 보기</a></div>'; }
+  const sj = subj(f.subject), un = unitOf(f);
+  document.title = `${f.title} — 민혁닷컴`;
+  const rel = S.files.filter((x) => x.id !== f.id && x.visible !== false && x.subject === f.subject)
+    .sort((a, b) => (b.unit === f.unit) - (a.unit === f.unit) || (b.downloads || 0) - (a.downloads || 0)).slice(0, 4);
+  const date = created(f) ? new Date(created(f)).toISOString().slice(0, 10) : '-';
+  return `<div class="crumb"><a href="#/">홈</a> › ${sj ? `<a href="#/${encodeURIComponent(sj.id)}">${esc(sj.name)}</a>` : '미분류'}${un ? ` › <a href="#/${encodeURIComponent(sj.id)}/${encodeURIComponent(un.id)}">${esc(un.name)}</a>` : ''}</div>
+  <div class="detail">
+    <div class="d-main">
+      <div class="d-top">${coverHTML(f, true)}
+        <div class="d-info">
+          <div class="c-tag" style="--c:${safeColor(sj?.color)}">${esc(sj ? sj.emoji + ' ' + sj.name : '미분류')}${un ? ' · ' + esc(un.name) : ''}</div>
+          <h1>${esc(f.title)} ${f.visible === false ? '<i class="bd hid">숨김</i>' : ''}${isNew(f) ? '<i class="bd new">NEW</i>' : ''}</h1>
+          <p class="d-desc">${esc(f.desc || '')}</p>
+          <dl class="spec">
+            <dt>난이도</dt><dd>${lvDots(f.level)} ${LV[Math.min(3, Math.max(1, Number(f.level) || 1))]}</dd>
+            <dt>문항 수</dt><dd>${Number(f.count) || '-'}문항</dd>
+            <dt>형식</dt><dd>PDF${f.hasSolution ? ' · 해설 PDF 포함' : ''}</dd>
+            <dt>등록일</dt><dd>${date}</dd>
+            <dt>다운로드</dt><dd>${num(f.downloads)}회</dd>
+          </dl>
+        </div></div>
+      <section class="d-sec"><h2>이 자료에는</h2>
+        <ul class="incl"><li>📄 <b>문제 PDF</b> — ${Number(f.count) || '-'}문항</li>
+          <li>${f.hasSolution ? '📝 <b>해설 PDF</b> — 풀이 수록' : '<span class="dim">📝 해설 PDF 없음</span>'}</li>
+          <li>♾️ <b>구매 후 재다운로드</b> 무제한 (내 정보에서 확인)</li></ul></section>
+      <section class="d-sec"><h2>미리보기</h2>
+        ${f.previewId ? '<div id="prevBox" class="prev-box"><button class="btn ghost" data-act="preview" type="button">👁 샘플 문제 보기</button></div>' : '<p class="dim">등록된 미리보기가 없어요.</p>'}</section>
+      ${rel.length ? `<section class="d-sec"><h2>같은 과목 다른 자료</h2>${gridOf(rel)}</section>` : ''}
+    </div>
+    <aside class="d-buy">${buyBoxHTML(f)}</aside>
+  </div>`;
+}
+function buyBoxHTML(f) {
+  const id = esc(f.id);
+  const priceBig = f.tier === 'free' ? '<b class="pr free">무료</b>' : Number(f.price) > 0 ? `<b class="pr">🪙 ${num(f.price)} <small>P</small></b>` : '<b class="pr pass">M패스 전용</b>';
+  const btns = [];
+  if (canMain(f)) btns.push(`<button class="btn primary lg block" data-dl="${id}" type="button">⬇ 문제 PDF 바로 다운로드</button>`);
+  if (canSol(f)) btns.push(`<button class="btn ghost lg block" data-dl="${id}" data-kind="solution" type="button">📝 해설 PDF 다운로드</button>`);
+  if (buyable(f)) {
+    const label = f.tier === 'free' ? `해설 포함 구매 · ${num(f.price)}P` : `${num(f.price)}P로 구매하기`;
+    btns.push(`<button class="btn buy lg block" data-buy="${id}" type="button">🪙 ${label}</button>`);
+  } else if (!canMain(f)) {
+    btns.push('<a class="btn ghost lg block" href="#/pass">🔒 M패스가 필요한 자료예요</a>');
+  } else if (f.tier === 'free' && f.hasSolution && !canSol(f)) {
+    btns.push('<a class="btn ghost block" href="#/pass">📝 해설은 M패스 전용</a>');
+  }
+  const me = S.user
+    ? `<div class="mypts"><span>내 포인트</span><b>🪙 ${num(S.points)} P</b><a href="#/points">충전</a></div>`
+    : '<div class="mypts"><span>구매하려면 로그인이 필요해요</span><button class="btn sm primary" data-act="login" type="button">로그인</button></div>';
+  const note = unlocked(f) ? (S.hasPass && !S.owned.has(f.id) && !S.isAdmin ? '<p class="b-note ok">👑 M패스로 이용 중이에요</p>' : S.owned.has(f.id) ? '<p class="b-note ok">✅ 구매한 자료예요. 언제든 다시 받을 수 있어요</p>' : '')
+    : (f.tier === 'premium' ? '<p class="b-note">구매하면 문제·해설 PDF를 계속 받을 수 있어요.<br>M패스가 있으면 이 자료도 추가 결제 없이 열려요.</p>' : '');
+  return `<div class="buy-box"><div class="b-price"><span>${f.tier === 'free' ? '무료 자료' : '프리미엄'}</span>${priceBig}</div>
+    <div class="b-btns">${btns.join('')}</div>${note}${me}</div>`;
+}
+
+/* =====================================================================
+   내 정보 · 포인트 충전 · M패스 · 이용안내
+   ===================================================================== */
+const loginPrompt = (why) => `<div class="need-login"><h2>로그인이 필요해요</h2><p>${why}</p>
+  <button class="btn primary" data-act="login" type="button">로그인</button></div>`;
+const STATUS = { pending: ['대기중', 'soon'], done: ['완료', 'ok'], rejected: ['거절', 'exp'] };
+const KIND = { grant: '지급', deduct: '차감', charge: '충전', purchase: '구매' };
+
+async function meHTML() {
+  document.title = '내 정보 — 민혁닷컴';
+  if (!S.user) return loginPrompt('내 포인트와 구매한 자료는 로그인 후 볼 수 있어요.');
+  let led = [], ch = [], pu = [];
+  try { [led, ch, pu] = await Promise.all([S.api.myLedger(S.user), S.api.myCharges(S.user), S.api.myPurchases(S.user)]); } catch (e) { console.warn(e); }
+  const mine = pu.map((p) => ({ p, f: S.files.find((x) => x.id === p.fileId) })).filter((x) => x.f);
+  return `<div class="page-h"><h1>내 정보</h1></div>
+  <div class="me-top">
+    <div class="me-card"><span>아이디</span><b>${esc(S.user.username)}</b>${S.isAdmin ? '<i class="badge admin">ADMIN</i>' : S.hasPass ? '<i class="badge m">M PASS</i>' : '<small>M패스 없음</small>'}</div>
+    <div class="me-card pts"><span>내 M포인트</span><b>🪙 ${num(S.points)} P</b><a class="btn sm primary" href="#/points">충전하기</a></div>
+  </div>
+  <section class="blk"><div class="blk-h"><h2>구매한 자료 <small>${mine.length}개</small></h2></div>
+    ${mine.length ? `<div class="rows">${mine.map(({ p, f }) => `<div class="row-item"><a class="ri-t" href="#/f/${encodeURIComponent(f.id)}">${esc(f.title)}</a>
+      <small>${num(p.price)}P · ${fmtDT(p.at)}</small>
+      <span class="ri-b"><button class="btn sm primary" data-dl="${esc(f.id)}" type="button">⬇ 문제</button>${f.hasSolution ? `<button class="btn sm ghost" data-dl="${esc(f.id)}" data-kind="solution" type="button">📝 해설</button>` : ''}</span></div>`).join('')}</div>`
+      : `<p class="empty-s">${S.hasPass ? 'M패스로 이용 중이라 구매 기록이 없어요. 프리미엄 자료는 모두 받을 수 있어요.' : '아직 구매한 자료가 없어요. <a href="#/list?tier=premium">프리미엄 자료 보러가기</a>'}</p>`}</section>
+  <section class="blk"><div class="blk-h"><h2>포인트 내역</h2></div>
+    ${led.length ? `<div class="tbl"><div class="tr th"><span>일시</span><span>구분</span><span>내용</span><span>변동</span><span>잔액</span></div>${led.map((l) =>
+      `<div class="tr"><span>${fmtDT(l.at)}</span><span><i class="pill k-${l.kind}">${KIND[l.kind] || l.kind}</i></span><span>${esc(l.memo || '')}</span><span class="${l.delta >= 0 ? 'plus' : 'minus'}">${l.delta >= 0 ? '+' : ''}${num(l.delta)}</span><span>${num(l.balance_after)}</span></div>`).join('')}</div>` : '<p class="empty-s">내역이 없어요.</p>'}</section>
+  <section class="blk"><div class="blk-h"><h2>충전 신청 내역</h2></div>
+    ${ch.length ? `<div class="tbl c3"><div class="tr th"><span>신청일</span><span>금액</span><span>입금자명</span><span>상태</span></div>${ch.map((c) =>
+      `<div class="tr"><span>${fmtDT(c.at)}</span><span>${num(c.amount)} P</span><span>${esc(c.depositor || '-')}</span><span><i class="pill ${STATUS[c.status]?.[1] || ''}">${STATUS[c.status]?.[0] || c.status}</i></span></div>`).join('')}</div>` : '<p class="empty-s">충전 신청이 없어요.</p>'}</section>`;
+}
+
+let packSel = 0;
+async function pointsHTML() {
+  document.title = 'M포인트 충전 — 민혁닷컴';
+  const packs = (S.site.packs || []).filter((p) => Number(p.p) > 0);
+  if (packSel >= packs.length) packSel = 0;
+  let ch = [];
+  if (S.user) { try { ch = await S.api.myCharges(S.user); } catch (e) { console.warn(e); } }
+  const pending = ch.filter((c) => c.status === 'pending').length;
+  return `<div class="page-h"><h1>🪙 M포인트 충전</h1><p>충전한 포인트로 프리미엄 자료를 한 세트씩 구매해요. 1회 구매하면 계속 다운로드할 수 있어요.</p></div>
+  <div class="two-col">
+    <section class="panel"><h2>1. 충전할 금액 고르기</h2>
+      <div class="packs">${packs.map((p, i) => `<label class="pack ${i === packSel ? 'on' : ''}"><input type="radio" name="pack" value="${i}" ${i === packSel ? 'checked' : ''}><b>${num(p.p)} P</b><span>${esc(p.l || '')}</span></label>`).join('') || '<p class="empty-s">충전 상품이 아직 없어요. 관리자에게 문의해주세요.</p>'}</div>
+      <h2>2. 입금 안내</h2><div class="info-box">${nl2br(S.site.chargeInfo)}</div>
+      <h2>3. 충전 신청 보내기</h2>
+      ${S.user ? `<form class="form" data-form="charge"><label>입금자명<input name="depositor" maxlength="40" required placeholder="입금한 분의 이름"></label>
+        <button class="btn primary lg" type="submit" ${packs.length ? '' : 'disabled'}>충전 신청하기</button>
+        <p class="note">입금이 확인되면 관리자가 승인하고, 승인 즉시 포인트가 들어가요.${pending ? ` (현재 대기 중인 신청 ${pending}건)` : ''}</p></form>`
+      : loginPrompt('충전 신청은 로그인 후 보낼 수 있어요.')}
+    </section>
+    <aside class="panel"><h2>내 현황</h2>
+      ${S.user ? `<div class="me-card pts"><span>내 M포인트</span><b>🪙 ${num(S.points)} P</b></div>
+        ${ch.length ? `<h3>최근 신청</h3><div class="rows">${ch.slice(0, 5).map((c) => `<div class="row-item"><span>${num(c.amount)} P</span><small>${fmtDT(c.at)}</small><i class="pill ${STATUS[c.status]?.[1] || ''}">${STATUS[c.status]?.[0] || c.status}</i></div>`).join('')}</div>` : ''}` : '<p class="empty-s">로그인하면 내 포인트가 보여요.</p>'}
+      <h3>자주 묻는 질문</h3>
+      <details><summary>포인트는 언제 들어오나요?</summary><p>입금 확인 후 관리자가 승인하면 바로 반영돼요. 관리자가 확인하는 시간에 따라 다를 수 있어요.</p></details>
+      <details><summary>구매한 자료는 계속 받을 수 있나요?</summary><p>네. 한 번 구매한 자료는 내 정보에서 언제든 다시 받을 수 있어요.</p></details>
+      <details><summary>M패스랑 뭐가 달라요?</summary><p>M패스는 기간 동안 프리미엄 전체를 열어주고, M포인트는 필요한 세트만 골라서 사는 방식이에요.</p></details>
+    </aside>
+  </div>`;
+}
+
+function passHTML() {
+  document.title = 'M패스 — 민혁닷컴';
+  return `<div class="page-h"><h1>👑 M패스</h1><p>프리미엄 자료와 해설을 한 번에 열어주는 이용권이에요.</p></div>
+  ${S.hasPass ? '<div class="ok-box">✅ 지금 M패스를 이용 중이에요! 프리미엄 자료는 전부 받을 수 있어요.</div>' : ''}
+  <div class="cmp">
+    <div class="cmp-c"><h3>무료</h3><ul><li>무료 자료 다운로드</li><li>미리보기</li></ul><b>0원</b></div>
+    <div class="cmp-c"><h3>🪙 M포인트</h3><ul><li>필요한 세트만 골라 구매</li><li>구매한 자료 영구 재다운로드</li><li>해설 PDF 포함</li></ul><b>세트마다 결제</b><a class="btn ghost block" href="#/points">충전하기</a></div>
+    <div class="cmp-c best"><span class="ribbon">추천</span><h3>👑 M패스</h3><ul><li>프리미엄 전체 자료 무제한</li><li>해설 PDF 전부 포함</li><li>새로 올라오는 자료도 추가 결제 없이</li></ul><b>기간 동안 무제한</b></div>
+  </div>
+  <div class="info-box">${nl2br(S.site.passInfo)}</div>
+  <p class="note">문의: ${esc(S.site.contact || '')}</p>`;
+}
+
+function aboutHTML() {
+  document.title = '이용안내 — 민혁닷컴';
+  return `<div class="page-h"><h1>민혁닷컴 이용안내</h1></div>
+  <section class="panel"><h2>민혁닷컴은?</h2><p class="pre">${nl2br(S.site.about)}</p></section>
+  <section class="panel"><h2>자료는 이렇게 받아요</h2>
+    <ol class="plain"><li><b>무료 자료</b> — 상세 페이지의 다운로드 버튼을 누르면 바로 PDF가 내려받아져요.</li>
+      <li><b>프리미엄 자료</b> — M포인트로 구매하거나 M패스가 있으면 열려요. 구매한 자료는 계속 받을 수 있어요.</li>
+      <li><b>해설 PDF</b> — 해설이 있는 자료는 구매·M패스로 함께 열려요.</li></ol></section>
+  <section class="panel"><h2>계정</h2><p>PyNest에서 쓰는 ID와 비밀번호 그대로 로그인할 수 있어요. 민혁닷컴에서 가입해도 같은 계정이 만들어져요.</p></section>
+  <section class="panel"><h2>문의</h2><p>${esc(S.site.contact || '')}</p></section>`;
+}
+
+/* =====================================================================
+   다운로드 / 구매
    ===================================================================== */
 async function download(id, kind) {
-  const f = files.find((x) => x.id === id);
+  const f = S.files.find((x) => x.id === id);
   if (!f) return;
+  if (kind === 'solution' ? !canSol(f) : !canMain(f)) return toast('이 자료는 구매하거나 M패스가 있어야 받을 수 있어요');
   try {
-    const driveId = await api.getDriveId(f, kind);
-    if (DEMO) toast('데모 모드라 실제 파일은 없어! 설정하면 바로 다운로드돼');
+    const driveId = await S.api.getDriveId(f, kind);
+    if (S.DEMO) toast('데모 모드라 실제 파일은 없어! 설정하면 바로 다운로드돼');
     else { triggerDownload(driveId); toast('다운로드 시작! 📥'); }
     if (kind === 'main') {
       f.downloads = (f.downloads || 0) + 1;
-      api.countDownload(f.id);
-      renderGrid();
+      S.api.countDownload(f.id);
     }
   } catch (err) { console.error(err); toast('권한이 없거나 오류가 났어'); }
 }
-function preview(id) {
-  const f = files.find((x) => x.id === id);
-  if (!f || !f.previewId) return;
-  if (DEMO) return toast('데모 모드라 미리보기 파일은 없어!');
-  $('#prevTitle').textContent = f.title;
-  $('#prevFrame').src = `https://drive.google.com/file/d/${encodeURIComponent(f.previewId)}/preview`;
-  $('#dlgPreview').showModal();
-}
 
-/* =====================================================================
-   관리자 패널
-   ===================================================================== */
-async function openAdmin() {
-  $('#dlgAdmin').showModal();
-  fillSubjectSelects();
-  taxDraft = clone(tax); taxDirty = false; renderTaxAdmin();
-  fillSiteForm();
-  await refreshPass();
-  switchTab('tabDash');
-}
-function switchTab(id) {
-  $$('.tab').forEach((x) => x.classList.toggle('active', x.dataset.tab === id));
-  $$('.tabpane').forEach((p) => p.classList.toggle('hidden', p.id !== id));
-  if (id === 'tabDash') renderDash();
-  if (id === 'tabFiles') renderAdminFiles();
-  if (id === 'tabPass') refreshPass().then(renderAdminPass);
-}
-
-/* ---- 대시보드 ---- */
-function renderDash() {
-  const shown = files.filter((f) => f.visible !== false).length;
-  const dl = files.reduce((n, f) => n + (f.downloads || 0), 0);
-  const active = passCache.filter(passActive).length;
-  const soon = passCache.filter((p) => passStatus(p).k === 'soon').length;
-  const top = [...files].sort((a, b) => (b.downloads || 0) - (a.downloads || 0)).slice(0, 5);
-  const max = Math.max(1, ...top.map((f) => f.downloads || 0));
-  const maxS = Math.max(1, ...tax.map((s) => files.filter((f) => f.subject === s.id).length));
-  $('#dash').innerHTML = `
-    <div class="kpis">
-      <div class="kpi"><b>${files.length}</b><span>전체 자료 (공개 ${shown} · 숨김 ${files.length - shown})</span></div>
-      <div class="kpi"><b>${dl}</b><span>누적 다운로드</span></div>
-      <div class="kpi"><b>${active}</b><span>활성 M패스${soon ? ` · 곧 만료 ${soon}` : ''}</span></div>
-      <div class="kpi"><b>${files.filter((f) => f.tier === 'premium').length}</b><span>프리미엄 자료</span></div>
-    </div>
-    <div class="dash-cols">
-      <div><h4>🔥 인기 자료 TOP 5</h4>${top.length ? top.map((f) => `
-        <div class="hbar"><span class="t">${esc(f.title)}</span><span class="track"><span class="fill" style="width:${Math.round((f.downloads || 0) / max * 100)}%"></span></span><em>${f.downloads || 0}</em></div>`).join('') : '<p class="note">아직 자료가 없어.</p>'}</div>
-      <div><h4>📚 과목별 자료 수</h4>${tax.map((s) => {
-        const n = files.filter((f) => f.subject === s.id).length;
-        return `<div class="hbar" style="--c:${safeColor(s.color)}"><span class="t">${esc(s.emoji)} ${esc(s.name)}</span><span class="track"><span class="fill" style="width:${Math.round(n / maxS * 100)}%"></span></span><em>${n}</em></div>`;
-      }).join('')}</div>
-    </div>`;
-}
-
-/* ---- 자료 관리 ---- */
-function fillSubjectSelects(keep) {
-  const opts = tax.map((s) => `<option value="${esc(s.id)}">${esc(s.emoji)} ${esc(s.name)}</option>`).join('');
-  $('#fSubject').innerHTML = opts || '<option value="">(과목 없음)</option>';
-  if (keep) $('#fSubject').value = keep;
-  fillUnitSelect();
-  const cur = $('#aFilter').value;
-  $('#aFilter').innerHTML = '<option value="">모든 과목</option><option value="__hidden">숨김(초안)만</option><option value="__pinned">고정한 자료만</option>' + opts;
-  $('#aFilter').value = cur || '';
-}
-function fillUnitSelect(selected) {
-  const sj = subj($('#fSubject').value);
-  $('#fUnit').innerHTML = '<option value="">(단원 없음)</option>' +
-    (sj?.units || []).map((u) => `<option value="${esc(u.id)}">${esc(u.name)}</option>`).join('');
-  if (selected) $('#fUnit').value = selected;
-}
-
-function renderAdminFiles() {
-  const q = $('#aSearch').value.trim().toLowerCase();
-  const flt = $('#aFilter').value;
-  const list = files.filter((f) =>
-    (!flt || (flt === '__hidden' ? f.visible === false : flt === '__pinned' ? f.pinned : f.subject === flt)) &&
-    (!q || f.title.toLowerCase().includes(q)))
-    .sort((a, b) => created(b) - created(a));
-  $('#adminFiles').innerHTML = list.length ? list.map((f) => {
-    const sj = subj(f.subject), un = unitOf(f), id = esc(f.id);
-    return `<div class="item ${f.visible === false ? 'dim' : ''}">
-      <div>${f.pinned ? '📌 ' : ''}${esc(f.title)}
-        <small>${esc(sj ? sj.name : '미분류')}${un ? ' › ' + esc(un.name) : ''} · ${f.tier === 'free' ? '무료' : '프리미엄'}${f.hasSolution ? ' · 해설' : ''} · 난이도 ${f.level || 1} · ⬇ ${f.downloads || 0}${f.visible === false ? ' · 숨김' : ''}</small></div>
-      <div class="item-btns">
-        <button class="btn sm ${f.pinned ? 'on' : ''}" data-fpin="${id}">📌 고정</button>
-        <button class="btn sm" data-fvis="${id}">${f.visible === false ? '공개하기' : '숨기기'}</button>
-        <button class="btn sm" data-fedit="${id}">수정</button>
-        <button class="btn sm danger" data-fdel="${id}">삭제</button>
-      </div></div>`;
-  }).join('') : '<p class="note">조건에 맞는 자료가 없어.</p>';
-}
-
-function resetFileForm() {
-  editId = null;
-  const f = $('#formFile');
-  f.reset();
-  $('#formTitle').textContent = '새 자료 등록';
-  $('#btnSaveFile').textContent = '저장';
-  fillSubjectSelects();
-  f.classList.add('hidden');
-}
-function openNewFile() {
-  resetFileForm();
-  $('#formFile').classList.remove('hidden');
-  $('#formFile').elements.title.focus();
-}
-async function openEditFile(id) {
-  const f = files.find((x) => x.id === id);
+let buyId = null;
+function openBuy(id) {
+  const f = S.files.find((x) => x.id === id);
   if (!f) return;
-  let p = {};
-  try { p = await api.getPremium(id); } catch { /* 없으면 빈 값 */ }
-  const form = $('#formFile');
-  resetFileForm();
-  editId = id;
-  fillSubjectSelects(f.subject);
-  fillUnitSelect(f.unit);
-  form.elements.title.value = f.title;
-  form.elements.level.value = String(f.level || 1);
-  form.elements.tier.value = f.tier;
-  form.elements.count.value = f.count || '';
-  form.elements.visible.value = f.visible === false ? '0' : '1';
-  form.elements.desc.value = f.desc || '';
-  form.elements.drive.value = (f.tier === 'free' ? f.driveId : p.driveId) || '';
-  form.elements.solution.value = p.solutionId || '';
-  form.elements.preview.value = f.previewId || '';
-  $('#formTitle').textContent = '자료 수정';
-  $('#btnSaveFile').textContent = '수정 저장';
-  form.classList.remove('hidden');
-  form.scrollIntoView?.({ behavior: 'smooth', block: 'start' });
+  if (!S.user) { toast('먼저 로그인해줘'); return openAuth('login'); }
+  buyId = id;
+  const after = S.points - Number(f.price);
+  const short = -after;
+  $('#buyBody').innerHTML = `<div class="buy-item"><b>${esc(f.title)}</b><small>${f.tier === 'free' ? '해설 PDF 포함 구매' : '문제 PDF' + (f.hasSolution ? ' + 해설 PDF' : '')}</small></div>
+    <dl class="buy-calc"><dt>가격</dt><dd>${num(f.price)} P</dd><dt>내 포인트</dt><dd>${num(S.points)} P</dd><dt>구매 후</dt><dd class="${after < 0 ? 'minus' : ''}">${num(Math.max(after, 0))} P</dd></dl>
+    ${after < 0 ? `<p class="warn">포인트가 <b>${num(short)} P</b> 부족해요.</p>` : '<p class="note">구매 후에는 취소·환불이 안 돼요. (문의는 관리자에게)</p>'}`;
+  $('#buyOk').classList.toggle('hidden', after < 0);
+  $('#buyCharge').classList.toggle('hidden', after >= 0);
+  $('#buyOk').disabled = false;
+  $('#dlgBuy').showModal();
 }
-async function submitFile(e) {
-  e.preventDefault();
-  const fd = Object.fromEntries(new FormData(e.target));
-  const main = extractDriveId(fd.drive);
-  if (!main) return toast('문제 PDF 드라이브 링크를 다시 확인해줘');
-  const solution = fd.solution.trim() ? extractDriveId(fd.solution) : null;
-  if (fd.solution.trim() && !solution) return toast('해설 링크를 다시 확인해줘');
-  const preview = fd.preview.trim() ? extractDriveId(fd.preview) : null;
-  if (fd.preview.trim() && !preview) return toast('미리보기 링크를 다시 확인해줘');
-  if (!fd.subject) return toast('과목을 먼저 만들어줘 (과목·단원 탭)');
-  const data = {
-    title: fd.title.trim(), subject: fd.subject, unit: fd.unit || '', level: Number(fd.level) || 1,
-    tier: fd.tier, count: Number(fd.count) || 0, desc: fd.desc.trim(),
-    previewId: preview || '', hasSolution: !!solution, visible: fd.visible === '1',
-  };
+async function confirmBuy() {
+  if (!buyId) return;
+  const btn = $('#buyOk');
+  btn.disabled = true;
   try {
-    if (editId) await api.updateFile(editId, data, { main, solution });
-    else await api.addFile(data, { main, solution });
-    const wasEdit = !!editId;
-    resetFileForm();
-    await loadFiles();
-    renderAdminFiles(); renderDash();
-    toast(wasEdit ? '수정 완료 ✅' : '등록 완료! 🎉');
-  } catch (err) { console.error(err); toast('저장 실패 (schema.sql 실행 / 관리자 계정 확인)'); }
-}
-
-/* ---- 과목·단원 관리 ---- */
-function markTaxDirty() {
-  taxDirty = true;
-  $('#btnSaveTax').disabled = false;
-  $('#taxDirtyMsg').classList.remove('hidden');
-}
-function renderTaxAdmin() {
-  $('#taxList').innerHTML = taxDraft.map((s, i) => `
-    <div class="tax-card" data-si="${i}">
-      <div class="tax-head">
-        <input class="emo" data-f="emoji" value="${esc(s.emoji)}" maxlength="4" aria-label="이모지">
-        <input class="grow" data-f="name" value="${esc(s.name)}" aria-label="과목 이름">
-        <input type="color" data-f="color" value="${safeColor(s.color)}" aria-label="색">
-        <button class="btn sm" data-smove="up" type="button">↑</button>
-        <button class="btn sm" data-smove="down" type="button">↓</button>
-        <button class="btn sm danger" data-sdel type="button">삭제</button>
-      </div>
-      <div class="units">${(s.units || []).map((u, j) => `
-        <div class="unit-row" data-uj="${j}">
-          <input data-f="uname" value="${esc(u.name)}" aria-label="단원 이름">
-          <button class="btn sm" data-umove="up" type="button">↑</button>
-          <button class="btn sm" data-umove="down" type="button">↓</button>
-          <button class="btn sm danger" data-udel type="button">✕</button>
-        </div>`).join('')}</div>
-      <div class="unit-add">
-        <input data-f="newunit" placeholder="새 단원 이름 (예: 천문)">
-        <button class="btn sm primary" data-uadd type="button">＋ 단원</button>
-      </div>
-    </div>`).join('') || '<p class="note">과목이 하나도 없어. 아래에서 추가해줘.</p>';
-  $('#btnSaveTax').disabled = !taxDirty;
-  $('#taxDirtyMsg').classList.toggle('hidden', !taxDirty);
-}
-const move = (arr, i, dir) => {
-  const j = i + (dir === 'up' ? -1 : 1);
-  if (j < 0 || j >= arr.length) return false;
-  [arr[i], arr[j]] = [arr[j], arr[i]];
-  return true;
-};
-function addUnit(card) {
-  const input = $('[data-f=newunit]', card);
-  const name = input.value.trim();
-  if (!name) return toast('단원 이름을 적어줘');
-  taxDraft[+card.dataset.si].units.push({ id: uid('u'), name });
-  markTaxDirty(); renderTaxAdmin();
-}
-async function saveTax() {
-  for (const s of taxDraft) {
-    s.name = s.name.trim();
-    s.emoji = (s.emoji || '').trim() || '📘';
-    s.units = (s.units || []).map((u) => ({ ...u, name: u.name.trim() })).filter((u) => u.name);
-  }
-  if (taxDraft.some((s) => !s.name)) return toast('이름이 빈 과목이 있어');
-  try {
-    await api.saveTax(taxDraft);
-    tax = clone(taxDraft); taxDirty = false;
-    applyHash(); fillSubjectSelects(); renderTaxAdmin(); renderAll();
-    toast('과목·단원 저장 완료 ✨');
-  } catch (err) { console.error(err); toast('저장 실패 (schema.sql 실행 / 관리자 계정 확인)'); }
-}
-
-/* ---- M패스 ---- */
-async function refreshPass() {
-  try { passCache = await api.listPass(); } catch (e) { console.error(e); passCache = []; }
-}
-function renderAdminPass() {
-  const q = $('#pSearch').value.trim().toLowerCase();
-  const order = { soon: 0, ok: 1, exp: 2, off: 3 };
-  const list = passCache
-    .filter((p) => !q || `${p.name} ${p.memo || ''}`.toLowerCase().includes(q))
-    .sort((a, b) => order[passStatus(a).k] - order[passStatus(b).k] || a.name.localeCompare(b.name));
-  $('#adminPass').innerHTML = list.length ? list.map((p) => {
-    const st = passStatus(p), id = esc(p.id);
-    return `<div class="item"><div>${esc(p.name)} <i class="pill ${st.k}">${st.label}</i>
-      <small>${esc(p.memo || '메모 없음')} · ${p.expires ? p.expires + '까지' : '기간 제한 없음'}</small></div>
-      <div class="item-btns">
-        ${p.expires ? `<button class="btn sm" data-pext="${id}" data-m="1">+1개월</button><button class="btn sm" data-pext="${id}" data-m="12">+1년</button>` : ''}
-        <button class="btn sm danger" data-prm="${id}">회수</button>
-      </div></div>`;
-  }).join('') : '<p class="note">M패스 보유자가 없어.</p>';
-}
-async function extendPass(id, months) {
-  const p = passCache.find((x) => x.id === id);
-  if (!p || !p.expires) return;
-  const d = new Date(Math.max(new Date(p.expires + 'T23:59:59').getTime(), Date.now()));
-  d.setMonth(d.getMonth() + months);
-  try {
-    await api.setPass(p.name, fmtDate(d), p.memo);
-    await refreshPass(); renderAdminPass(); toast(`${fmtDate(d)}까지 연장했어 ✨`);
-  } catch (err) { console.error(err); toast('연장 실패'); }
-}
-async function submitPass(e) {
-  e.preventDefault();
-  const fd = Object.fromEntries(new FormData(e.target));
-  const names = [...new Set(fd.names.split(/[\s,;]+/).map((x) => x.trim().toLowerCase()).filter(Boolean))];
-  if (!names.length) return toast('PyNest ID를 입력해줘');
-  const bad = names.filter((x) => !ID_RE.test(x));
-  if (bad.length) return toast(`ID 형식이 이상해: ${bad[0]}`);
-  try {
-    const missing = [];
-    for (const n of names) {
-      if ((await api.setPass(n, fd.expires || null, fd.memo.trim())) === 'not_found') missing.push(n);
-    }
-    e.target.reset();
-    await refreshPass(); renderAdminPass();
-    const done = names.length - missing.length;
-    toast(missing.length ? `${done}명 부여 · 가입 안 된 ID: ${missing.join(', ')}` : `${done}명에게 M패스 부여 완료 ✨`);
-  } catch (err) { console.error(err); toast('부여 실패 (schema.sql 실행 / 관리자 계정 확인)'); }
-}
-
-/* ---- 사이트 설정 ---- */
-function fillSiteForm() {
-  const f = $('#formSite').elements;
-  f.noticeOn.checked = !!site.noticeOn;
-  f.autoPass.checked = !!site.autoPass;
-  f.notice.value = site.notice || '';
-  f.heroSub.value = site.heroSub || '';
-  f.contact.value = site.contact || '';
-  f.passInfo.value = site.passInfo || '';
-}
-async function submitSite(e) {
-  e.preventDefault();
-  const f = e.target.elements;
-  const next = { noticeOn: f.noticeOn.checked, autoPass: f.autoPass.checked, notice: f.notice.value.trim(), heroSub: f.heroSub.value.trim(), contact: f.contact.value.trim(), passInfo: f.passInfo.value.trim() };
-  try { await api.saveSite(next); site = { ...site, ...next }; renderSiteText(); toast('설정 저장 완료 ✨'); }
-  catch (err) { console.error(err); toast('저장 실패 (schema.sql 실행 / 관리자 계정 확인)'); }
-}
-async function exportBackup() {
-  try {
-    const data = await api.exportAll();
-    saveBlob(`minhyeok-com-backup-${fmtDate(new Date())}.json`, JSON.stringify({ exportedAt: new Date().toISOString(), taxonomy: tax, site, ...data }, null, 2));
-    toast('백업 파일을 내려받았어 💾');
-  } catch (err) { console.error(err); toast('백업 실패'); }
+    const r = await S.api.buyFile(buyId);
+    const msg = {
+      ok: '구매 완료! 🎉 이제 다운로드할 수 있어요', already: '이미 이용할 수 있는 자료예요', insufficient: '포인트가 부족해요',
+      not_for_sale: '포인트로 판매하지 않는 자료예요', not_found: '자료를 찾을 수 없어요', login: '로그인이 필요해요', blocked: '사용이 중지된 계정이에요',
+    }[r] || '구매하지 못했어요';
+    $('#dlgBuy').close();
+    toast(msg);
+    await refreshUserState();
+    await route();
+  } catch (err) { console.error(err); toast('구매 중 오류가 났어요. 잠시 뒤 다시 시도해줘'); }
+  finally { btn.disabled = false; buyId = null; }
 }
 
 /* =====================================================================
-   이벤트
+   로그인 / 가입 (PyNest 계정)
    ===================================================================== */
-/* ---- 로그인 / 가입 (PyNest 계정) ---- */
 let authTab = 'login';
 function renderAuthTab() {
   const signup = authTab === 'signup';
@@ -741,7 +495,7 @@ async function submitAuth(e) {
   const btn = $('#authSubmit');
   btn.disabled = true;
   try {
-    await (signup ? api.signup(id, pw) : api.login(id, pw));
+    await (signup ? S.api.signup(id, pw) : S.api.login(id, pw));
     $('#dlgAuth').close();
     $('#formAuth').reset();
     toast(signup ? '가입 완료! 환영해 🎉' : '로그인 완료!');
@@ -749,151 +503,139 @@ async function submitAuth(e) {
   finally { btn.disabled = false; }
 }
 
+/* =====================================================================
+   이벤트
+   ===================================================================== */
 function bind() {
   $('#btnLogin').onclick = () => openAuth('login');
   $('#formAuth').onsubmit = submitAuth;
-  $('#btnLogout').onclick = () => api.logout();
+  $('#btnLogout').onclick = () => S.api.logout();
   $('#btnAdmin').onclick = openAdmin;
-  $('#search').oninput = renderGrid;
-  $('#tierSel').onchange = (e) => { view.tier = e.target.value; renderGrid(); };
-  $('#sortSel').onchange = (e) => { view.sort = e.target.value; renderGrid(); };
-  window.addEventListener('hashchange', () => { applyHash(); renderNav(); renderGrid(); });
-  $('#dlgPreview').addEventListener('close', () => { $('#prevFrame').src = 'about:blank'; });
-
-  $('#btnNewFile').onclick = openNewFile;
-  $('#btnCancelFile').onclick = resetFileForm;
-  $('#fSubject').onchange = () => fillUnitSelect();
-  $('#formFile').onsubmit = submitFile;
-  $('#aSearch').oninput = renderAdminFiles;
-  $('#aFilter').onchange = renderAdminFiles;
-
-  $('#formSubject').onsubmit = (e) => {
+  $('#gform').onsubmit = (e) => {
     e.preventDefault();
-    const fd = Object.fromEntries(new FormData(e.target));
-    taxDraft.push({ id: uid('s'), name: fd.name.trim(), emoji: fd.emoji.trim() || '📘', color: fd.color, units: [] });
-    e.target.reset(); markTaxDirty(); renderTaxAdmin();
+    const q = $('#gq').value.trim();
+    navigate(q ? `#/list?q=${encodeURIComponent(q)}` : '#/list');
   };
-  $('#btnSaveTax').onclick = saveTax;
-  const taxList = $('#taxList');
-  taxList.addEventListener('input', (e) => {
-    const el = e.target, f = el.dataset.f;
-    if (!f || f === 'newunit') return;
-    const s = taxDraft[+el.closest('.tax-card').dataset.si];
-    if (f === 'uname') s.units[+el.closest('.unit-row').dataset.uj].name = el.value;
-    else s[f] = el.value;
-    markTaxDirty();
-  });
-  taxList.addEventListener('keydown', (e) => {
-    if (e.key === 'Enter' && e.target.dataset.f === 'newunit') { e.preventDefault(); addUnit(e.target.closest('.tax-card')); }
-  });
+  window.addEventListener('hashchange', route);
+  $('#buyOk').onclick = confirmBuy;
+  $('#buyCharge').onclick = () => { $('#dlgBuy').close(); navigate('#/points'); };
 
-  $('#pSearch').oninput = renderAdminPass;
-  $('#formPass').onsubmit = submitPass;
-  $('#formSite').onsubmit = submitSite;
-  $('#btnExport').onclick = exportBackup;
+  // 목록 필터 (페이지가 다시 그려져도 동작하도록 위임)
+  document.addEventListener('input', (e) => {
+    if (e.target.id === 'lq') { view.q = e.target.value; renderListGrid(); }
+  });
+  document.addEventListener('change', (e) => {
+    const t = e.target;
+    if (t.id === 'tierSel') { view.tier = t.value; renderListGrid(); }
+    if (t.id === 'sortSel') { view.sort = t.value; renderListGrid(); }
+    if (t.name === 'pack') { packSel = Number(t.value) || 0; $$('.pack').forEach((p, i) => p.classList.toggle('on', i === packSel)); }
+  });
+  document.addEventListener('submit', async (e) => {
+    const form = e.target.closest('form[data-form="charge"]');
+    if (!form) return;
+    e.preventDefault();
+    const packs = (S.site.packs || []).filter((p) => Number(p.p) > 0);
+    const pack = packs[packSel];
+    const dep = form.elements.depositor.value.trim();
+    if (!pack) return toast('충전 상품을 골라줘');
+    if (!dep) return toast('입금자명을 적어줘');
+    const btn = form.querySelector('button[type=submit]');
+    btn.disabled = true;
+    try {
+      const r = await S.api.requestCharge(Number(pack.p), dep);
+      toast({ ok: '충전 신청 완료! 입금 확인 후 포인트를 넣어드려요 ✅', too_many: '대기 중인 신청이 너무 많아요 (최대 5건)', invalid: '금액이 올바르지 않아요', login: '로그인이 필요해요', blocked: '사용이 중지된 계정이에요' }[r] || '신청하지 못했어요');
+      await route();
+    } catch (err) { console.error(err); toast('신청 중 오류가 났어요'); btn.disabled = false; }
+  });
 
   document.addEventListener('click', async (e) => {
     const t = e.target.closest('button');
     if (!t) return;
     const d = t.dataset;
     if (t.matches('[data-close]')) return t.closest('dialog').close();
-    if (t.matches('[data-lock]')) {
-      $('#passNeedLogin').textContent = user ? '' : '먼저 로그인해줘야 M패스를 확인할 수 있어. (PyNest ID 그대로 쓰면 돼)';
-      return $('#dlgPass').showModal();
+    if (d.act === 'login') return openAuth('login');
+    if (d.act === 'signup') return openAuth('signup');
+    if (d.act === 'preview') {
+      const id = (location.hash.match(/#\/f\/([^?]+)/) || [])[1];
+      const f = S.files.find((x) => x.id === decodeURIComponent(id || ''));
+      if (!f || !f.previewId) return;
+      if (S.DEMO) return toast('데모 모드라 미리보기 파일은 없어!');
+      $('#prevBox').innerHTML = `<iframe title="미리보기" loading="lazy" src="https://drive.google.com/file/d/${encodeURIComponent(f.previewId)}/preview"></iframe>`;
+      return;
     }
+    if (d.dot !== undefined) { startCarousel.show?.(Number(d.dot)); clearInterval(carouselTimer); return; }
     if (d.dl !== undefined) return download(d.dl, d.kind || 'main');
-    if (d.prev !== undefined) return preview(d.prev);
-    if (d.tab) return switchTab(d.tab);
+    if (d.buy !== undefined) return openBuy(d.buy);
     if (d.at) { authTab = d.at; return renderAuthTab(); }
-
-    // 자료 관리
-    if (d.fpin !== undefined) {
-      const f = files.find((x) => x.id === d.fpin);
-      await api.patchFile(f.id, { pinned: !f.pinned }); f.pinned = !f.pinned;
-      renderAdminFiles(); renderGrid(); return;
-    }
-    if (d.fvis !== undefined) {
-      const f = files.find((x) => x.id === d.fvis);
-      const next = f.visible === false;
-      await api.patchFile(f.id, { visible: next }); f.visible = next;
-      renderAdminFiles(); renderAll(); toast(next ? '공개했어' : '숨겼어'); return;
-    }
-    if (d.fedit !== undefined) return openEditFile(d.fedit);
-    if (d.fdel !== undefined) {
-      if (!confirm('정말 삭제할까? (되돌릴 수 없어)')) return;
-      await api.deleteFile(d.fdel); await loadFiles(); renderAdminFiles(); renderDash(); return toast('삭제했어');
-    }
-
-    // 과목·단원 관리
-    const card = t.closest('.tax-card');
-    if (card) {
-      const si = +card.dataset.si, s = taxDraft[si];
-      if (d.smove) { if (move(taxDraft, si, d.smove)) { markTaxDirty(); renderTaxAdmin(); } return; }
-      if (t.matches('[data-sdel]')) {
-        const n = files.filter((f) => f.subject === s.id).length;
-        if (!confirm(`"${s.name}" 과목을 삭제할까?${n ? `\n이 과목 자료 ${n}개는 "미분류"로 남아.` : ''}\n(저장 버튼을 눌러야 반영돼)`)) return;
-        taxDraft.splice(si, 1); markTaxDirty(); renderTaxAdmin(); return;
-      }
-      if (t.matches('[data-uadd]')) return addUnit(card);
-      const row = t.closest('.unit-row');
-      if (row) {
-        const uj = +row.dataset.uj;
-        if (d.umove) { if (move(s.units, uj, d.umove)) { markTaxDirty(); renderTaxAdmin(); } return; }
-        if (t.matches('[data-udel]')) { s.units.splice(uj, 1); markTaxDirty(); renderTaxAdmin(); return; }
-      }
-    }
-
-    // M패스
-    if (d.pext !== undefined) return extendPass(d.pext, +d.m);
-    if (d.prm !== undefined) {
-      if (!confirm('M패스를 회수할까?')) return;
-      await api.removePass(d.prm); await refreshPass(); renderAdminPass(); toast('회수했어');
-    }
+    await adminClick(e, t);
   });
+  bindAdmin();
 }
 
 /* =====================================================================
    시작
    ===================================================================== */
+async function loadFiles() {
+  try { S.files = await S.api.listFiles(S.isAdmin); } catch (e) { console.error(e); toast('자료를 불러오지 못했어'); S.files = []; }
+}
+async function refreshUserState() {
+  S.hasPass = false; S.points = 0; S.owned = new Set();
+  if (S.user) {
+    try { S.hasPass = await S.api.hasPass(S.user.id); } catch (e) { console.warn(e); }
+    try { const st = await S.api.myState(S.user); S.points = st.points; S.owned = new Set(st.owned); } catch (e) { console.warn(e); }
+  }
+  renderHeader();
+}
 async function applyUser(u) {
   if (u && u.status === 'rejected') { // PyNest 에서 사용 중지된 계정
     toast('사용이 중지된 계정이에요. 선생님께 문의해주세요');
-    await api.logout();
+    await S.api.logout();
     return;
   }
-  user = u;
-  isAdmin = calcAdmin(u);
-  hasPass = false;
-  if (u) { try { hasPass = await api.hasPass(u.id); } catch (e) { console.warn(e); } }
+  S.user = u;
+  S.isAdmin = calcAdmin(u);
+  await refreshUserState();
   await loadFiles();
+  await route();
 }
+S.hooks.reload = async () => { await loadFiles(); await route(); };
+S.hooks.route = route;
+S.hooks.header = renderHeader;
+S.hooks.refreshUser = refreshUserState;
 
 (async function init() {
   bind();
-  api = DEMO ? demoBackend() : await supabaseBackend();
-  if (DEMO) {
+  if (S.DEMO) {
+    S.api = demoBackend(demoFlags);
     document.body.insertAdjacentHTML('afterbegin',
-      '<div id="demoBar" style="background:#ffb84d;color:#111;text-align:center;padding:6px;font-size:.82rem;font-weight:700">데모 모드 (새로고침하면 초기화) — ' +
-      '<a href="#" id="demoPass" style="color:#111">M패스 토글</a> · <a href="#" id="demoAdmin" style="color:#111">관리자 토글</a></div>');
+      '<div id="demoBar">데모 모드 (새로고침하면 초기화) — ' +
+      '<a href="#" id="demoPass">M패스 토글</a> · <a href="#" id="demoAdmin">관리자 토글</a></div>');
     $('#demoPass').onclick = async (e) => {
       e.preventDefault();
-      window.__demoPass = !window.__demoPass;
-      if (!user) await api.login('demo_user'); else await applyUser(user);
-      toast(window.__demoPass ? 'M패스 ON' : 'M패스 OFF');
+      demoFlags.pass = !demoFlags.pass;
+      if (!S.user) await S.api.login('demo_user'); else await applyUser(S.user);
+      toast(demoFlags.pass ? 'M패스 ON' : 'M패스 OFF');
     };
     $('#demoAdmin').onclick = async (e) => {
       e.preventDefault();
       window.__demoAdmin = !window.__demoAdmin;
-      if (!user) await api.login('demo_user'); else await applyUser(user);
+      if (!S.user) await S.api.login('demo_user'); else await applyUser(S.user);
       toast(window.__demoAdmin ? '관리자 ON — 우측 상단 ⚙️ 관리자' : '관리자 OFF');
     };
+  } else {
+    const { createClient } = await import('https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm');
+    // PyNest 와 설정을 똑같이 쓰면, 같은 주소(github.io)에서는 로그인 세션도 같이 쓰게 돼요.
+    S.api = supabaseBackend(createClient(CONFIG.SUPABASE_URL, CONFIG.SUPABASE_ANON_KEY));
   }
+  S.tax = clone(DEFAULT_TAX);
+  S.site = clone(DEFAULT_SITE);
   try {
-    const m = await api.loadMeta();
-    if (Array.isArray(m.tax)) tax = m.tax;
-    if (m.site) site = { ...DEFAULT_SITE, ...m.site };
+    const m = await S.api.loadMeta();
+    if (Array.isArray(m.tax)) S.tax = m.tax;
+    if (m.site) S.site = { ...clone(DEFAULT_SITE), ...m.site };
   } catch (e) { console.warn('meta 로드 실패 (기본값 사용)', e); }
-  applyHash();
-  renderAll();
-  api.onAuth((u) => applyUser(u));
+  await loadFiles();
+  renderHeader();
+  await route();
+  S.api.onAuth((u) => applyUser(u));
 })();
