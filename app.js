@@ -1,11 +1,11 @@
-import { CONFIG } from './config.js?v=13';
-import { $, $$, esc, clone, safeColor, safeLink, num, fmtDT, fmtDate, richText, ID_RE, toast, triggerDownload, DAY, PYNEST_URL } from './util.js?v=13';
-import { DEFAULT_TAX, DEFAULT_SITE, DEFAULT_MENU, DEFAULT_PLANS, DEFAULT_BANNERS } from './defaults.js?v=13';
-import { demoBackend, supabaseBackend } from './backend.js?v=13';
-import { S, subj, unitOf, findUnit, unitPath, unitIds, flatUnits, created, isNew, visibleFiles, unlocked, canMain, canSol, buyable, claimable, hasPreview } from './state.js?v=13';
-import { bindAdmin, openAdmin, adminClick } from './admin.js?v=13';
-import { B, barHTML, syncSel, bulkClick, bindBulk } from './bulk.js?v=13';
-import { pencil, startEdit, cancelEdit, commitEdit, newPageHTML, afterNewPage, filePanelHTML, openFilePanel, bindEditor } from './editor.js?v=13';
+import { CONFIG } from './config.js?v=14';
+import { $, $$, esc, clone, safeColor, safeLink, num, fmtDT, fmtDate, richText, ID_RE, toast, triggerDownload, DAY, PYNEST_URL } from './util.js?v=14';
+import { DEFAULT_TAX, DEFAULT_SITE, DEFAULT_MENU, DEFAULT_PLANS, DEFAULT_BANNERS } from './defaults.js?v=14';
+import { demoBackend, supabaseBackend } from './backend.js?v=14';
+import { S, subj, unitOf, findUnit, unitPath, unitIds, flatUnits, created, isNew, visibleFiles, unlocked, canMain, canSol, buyable, claimable, hasPreview } from './state.js?v=14';
+import { bindAdmin, openAdmin, adminClick } from './admin.js?v=14';
+import { B, barHTML, syncSel, bulkClick, bindBulk } from './bulk.js?v=14';
+import { pencil, startEdit, cancelEdit, commitEdit, newPageHTML, afterNewPage, filePanelHTML, openFilePanel, bindEditor } from './editor.js?v=14';
 
 S.DEMO = !CONFIG.SUPABASE_URL || /여기에/.test(CONFIG.SUPABASE_URL) || new URLSearchParams(location.search).has('demo');
 const demoFlags = {};
@@ -41,7 +41,43 @@ function renderDrawerUser() {
 
 /* ---- 왼쪽 메뉴 패널 ---- */
 function openDrawer() { $('#drawer').classList.add('open'); $('#drawerBg').classList.add('open'); $('#drawer').setAttribute('aria-hidden', 'false'); document.body.classList.add('no-scroll'); }
-function closeDrawer() { $('#drawer').classList.remove('open'); $('#drawerBg').classList.remove('open'); $('#drawer').setAttribute('aria-hidden', 'true'); document.body.classList.remove('no-scroll'); }
+function closeDrawer() { fly = []; renderFly(); $('#drawer').classList.remove('open'); $('#drawerBg').classList.remove('open'); $('#drawer').setAttribute('aria-hidden', 'true'); document.body.classList.remove('no-scroll'); }
+/* ---- 메뉴 옆으로 펼쳐지는 하위 계층 창 (한 번 누르면 펼침, 같은 걸 또 누르면 이동) ---- */
+let fly = []; // fly[i] = i번째 창을 연 항목의 경로 "과목/단원/단원…"
+function flyNode(key) {
+  const ids = key.split('/'); const sj = subj(ids[0]); if (!sj) return null;
+  const node = ids.length > 1 ? findUnit(sj, ids[ids.length - 1]) : null;
+  return { sj, node, kids: node ? (node.children || []) : (sj.units || []) };
+}
+function renderFly() {
+  const box = $('#flyouts'); if (!box) return;
+  box.innerHTML = fly.map((key, i) => {
+    const n = flyNode(key); if (!n) return '';
+    const base = `#/${encodeURIComponent(n.sj.id)}`;
+    const title = n.node ? n.node.name : `${n.sj.emoji} ${n.sj.name}`;
+    const items = n.kids.map((u) => {
+      const k = `${key}/${u.id}`; const has = (u.children || []).length > 0;
+      return `<a class="fl-i ${fly[i + 1] === k ? 'sel' : ''} ${route.cur === 'list' && view.s === n.sj.id && view.u === u.id ? 'on' : ''}" href="${base}/${encodeURIComponent(u.id)}" ${has ? `data-fly="${esc(k)}" data-lv="${i + 1}"` : ''}><span>${esc(u.name)}</span>${has ? '<i class="ar">›</i>' : ''}</a>`;
+    }).join('');
+    const hrefAll = n.node ? `${base}/${encodeURIComponent(n.node.id)}` : base;
+    return `<div class="flyp" style="--i:${i}"><div class="fl-h"><button class="fl-back" data-flyback="${i}" type="button" aria-label="뒤로">‹</button><b>${esc(title)}</b></div>
+      <a class="fl-i all" href="${hrefAll}"><span>전체 보기</span></a>${items}</div>`;
+  }).join('');
+  box.classList.toggle('open', fly.length > 0);
+}
+function bindFly() {
+  document.addEventListener('click', (e) => {
+    const back = e.target.closest('[data-flyback]');
+    if (back) { fly = fly.slice(0, Number(back.dataset.flyback)); renderFly(); renderDrawerNav(); return; }
+    const a = e.target.closest('[data-fly]');
+    if (!a || !(a.closest('#drawer') || a.closest('#flyouts'))) return;
+    const key = a.dataset.fly, lv = Number(a.dataset.lv);
+    if (fly[lv] === key) return; // 이미 펼쳐진 항목을 또 누르면 그 페이지로 이동
+    e.preventDefault(); e.stopPropagation();
+    fly = [...fly.slice(0, lv), key]; renderFly(); renderDrawerNav();
+  }, true);
+  $('#flyouts').addEventListener('click', (e) => { if (e.target.closest('a[href]')) closeDrawer(); });
+}
 const hashKey = (h) => { const x = String(h || '#/').split('?')[0].replace(/\/$/, ''); return x === '#' || x === '' ? '#/' : x; };
 function menuItemHTML(m) {
   if (m.on === false) return '';
@@ -49,10 +85,8 @@ function menuItemHTML(m) {
   if (m.type === 'subjects') {
     return S.tax.map((s) => {
       const open = route.cur === 'list' && view.s === s.id;
-      const base = `#/${encodeURIComponent(s.id)}`;
-      return `<details class="dr-sub" style="--c:${safeColor(s.color)}" ${open ? 'open' : ''}><summary>${esc(s.emoji)} ${esc(s.name)}</summary>
-        <a class="dr-link ${open && view.u === 'all' ? 'on' : ''}" href="${base}">전체 보기</a>` +
-        flatUnits(s.units).map(({ u, depth }) => `<a class="dr-link d${Math.min(depth, 3)} ${open && view.u === u.id ? 'on' : ''}" href="${base}/${encodeURIComponent(u.id)}">${esc(u.name)}</a>`).join('') + '</details>';
+      const has = (s.units || []).length > 0;
+      return `<a class="dr-sub ${open ? 'on' : ''} ${fly[0] === s.id ? 'sel' : ''}" style="--c:${safeColor(s.color)}" href="#/${encodeURIComponent(s.id)}" ${has ? `data-fly="${esc(s.id)}" data-lv="0"` : ''}>${esc(s.emoji)} ${esc(s.name)}${has ? '<i class="ar">›</i>' : ''}</a>`;
     }).join('');
   }
   const link = safeLink(m.link);
@@ -758,6 +792,7 @@ function bind() {
   window.addEventListener('hashchange', route);
   $('#buyOk').onclick = confirmBuy;
   bindEditor();
+  bindFly();
   bindBulk();
   $('#buyCharge').onclick = () => { $('#dlgBuy').close(); navigate('#/points'); };
 
