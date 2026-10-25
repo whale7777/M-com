@@ -405,3 +405,9 @@ textarea.ed-in{width:100%;resize:vertical}
 .cs-l{font-weight:800;font-size:.85rem;color:var(--muted)}.cs-a{color:var(--muted)}
 .leaf-h .trail{font-weight:500;color:var(--muted);font-size:.85em}
 .folder{gap:12px}
+
+.bigblk{background:var(--surface);border:1px solid var(--line);border-radius:16px;padding:14px;box-shadow:var(--shadow)}
+.bigblk>.leaf-h b{font-size:1.05rem}
+.smalls{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:10px;margin-top:6px}
+.leaf.sm{background:var(--bg);border-color:var(--line2);padding:10px 12px}
+.leaf.sm .leaf-h b{font-size:.92rem}

@@ -1,10 +1,10 @@
-import { CONFIG } from './config.js?v=11';
-import { $, $$, esc, clone, safeColor, safeLink, num, fmtDT, fmtDate, richText, ID_RE, toast, triggerDownload, DAY, PYNEST_URL } from './util.js?v=11';
-import { DEFAULT_TAX, DEFAULT_SITE, DEFAULT_MENU, DEFAULT_PLANS, DEFAULT_BANNERS } from './defaults.js?v=11';
-import { demoBackend, supabaseBackend } from './backend.js?v=11';
-import { S, subj, unitOf, findUnit, unitPath, unitIds, flatUnits, created, isNew, visibleFiles, unlocked, canMain, canSol, buyable, claimable, hasPreview } from './state.js?v=11';
-import { bindAdmin, openAdmin, adminClick } from './admin.js?v=11';
-import { pencil, startEdit, cancelEdit, commitEdit, newPageHTML, afterNewPage, filePanelHTML, openFilePanel, bindEditor } from './editor.js?v=11';
+import { CONFIG } from './config.js?v=12';
+import { $, $$, esc, clone, safeColor, safeLink, num, fmtDT, fmtDate, richText, ID_RE, toast, triggerDownload, DAY, PYNEST_URL } from './util.js?v=12';
+import { DEFAULT_TAX, DEFAULT_SITE, DEFAULT_MENU, DEFAULT_PLANS, DEFAULT_BANNERS } from './defaults.js?v=12';
+import { demoBackend, supabaseBackend } from './backend.js?v=12';
+import { S, subj, unitOf, findUnit, unitPath, unitIds, flatUnits, created, isNew, visibleFiles, unlocked, canMain, canSol, buyable, claimable, hasPreview } from './state.js?v=12';
+import { bindAdmin, openAdmin, adminClick } from './admin.js?v=12';
+import { pencil, startEdit, cancelEdit, commitEdit, newPageHTML, afterNewPage, filePanelHTML, openFilePanel, bindEditor } from './editor.js?v=12';
 
 S.DEMO = !CONFIG.SUPABASE_URL || /여기에/.test(CONFIG.SUPABASE_URL) || new URLSearchParams(location.search).has('demo');
 const demoFlags = {};
@@ -323,13 +323,18 @@ function cascadeHTML(sj, un) {
   }
   return `<div class="cascade"><span class="cs-l">폴더</span>${boxes.join('<span class="cs-a">›</span>')}</div>`;
 }
-// 최하위(자료가 담기는) 폴더 블럭을 순서대로
+// 최하위의 바로 윗 계층 = 큰 블럭, 그 안에 최하위 작은 블럭(회차 칸 묶음). 그 위 계층은 큰 블럭들이 순서대로 나열돼요.
 function blocksOf(sj, nodes, trail, files, out) {
+  const mineOf = (u) => files.filter((f) => f.subject === sj.id && f.unit === u.id).sort(natural);
   for (const u of nodes) {
     const kids = u.children || [];
-    const mine = files.filter((f) => f.subject === sj.id && f.unit === u.id).sort(natural);
-    if (!kids.length || mine.length) out.push({ u, trail, mine });
-    if (kids.length) blocksOf(sj, kids, [...trail, u.name], files, out);
+    const leaves = kids.filter((k) => !(k.children || []).length);
+    const own = mineOf(u);
+    if (!kids.length) out.push({ u, trail, own, leaves: [] });
+    else {
+      if (leaves.length || own.length) out.push({ u, trail, own, leaves: leaves.map((k) => ({ u: k, mine: mineOf(k) })) });
+      blocksOf(sj, kids.filter((k) => (k.children || []).length), [...trail, u.name], files, out);
+    }
   }
   return out;
 }
@@ -337,10 +342,14 @@ function folderHTML(sj, un) {
   const files = S.files.filter((f) => f.visible !== false || S.isAdmin);
   const blocks = blocksOf(sj, un ? [un] : (sj.units || []), un ? unitPath(sj, un.id).slice(0, -1).map((x) => x.name) : [], files, []);
   const loose = un ? [] : files.filter((f) => f.subject === sj.id && !findUnit(sj, f.unit)).sort(natural);
-  const card = (b) => `<div class="leaf"><div class="leaf-h"><b>${b.trail.length ? `<span class="trail">${b.trail.map(esc).join(' › ')} › </span>` : ''}${esc(b.u.name)}</b>${S.isAdmin ? `<button class="linkbtn" data-act="admin-new" data-s="${esc(sj.id)}" data-u="${esc(b.u.id)}" type="button">＋ 자료</button>` : ''}</div>
-    ${b.mine.length ? `<div class="tiles">${b.mine.map(tileHTML).join('')}</div>` : '<p class="note">아직 올라온 자료가 없어요.</p>'}</div>`;
+  const add = (id) => S.isAdmin ? `<button class="linkbtn" data-act="admin-new" data-s="${esc(sj.id)}" data-u="${esc(id)}" type="button">＋ 자료</button>` : '';
+  const small = (l) => `<div class="leaf sm"><div class="leaf-h"><b>${esc(l.u.name)}</b>${add(l.u.id)}</div>
+    ${l.mine.length ? `<div class="tiles">${l.mine.map(tileHTML).join('')}</div>` : '<p class="note">아직 올라온 자료가 없어요.</p>'}</div>`;
+  const card = (b) => `<section class="bigblk"><div class="leaf-h"><b>${b.trail.length ? `<span class="trail">${b.trail.map(esc).join(' › ')} › </span>` : ''}${esc(b.u.name)}</b>${add(b.u.id)}</div>
+    ${b.own.length ? `<div class="tiles own">${b.own.map(tileHTML).join('')}</div>` : ''}
+    ${b.leaves.length ? `<div class="smalls">${b.leaves.map(small).join('')}</div>` : (!b.own.length ? '<p class="note">아직 올라온 자료가 없어요.</p>' : '')}</section>`;
   return `${cascadeHTML(sj, un)}<div class="folder">${blocks.map(card).join('') || '<p class="empty">아직 단원이 없어요. 관리자 › 과목·단원에서 폴더를 만들어줘.</p>'}
-    ${loose.length ? `<div class="leaf"><div class="leaf-h"><b>미분류</b></div><div class="tiles">${loose.map(tileHTML).join('')}</div></div>` : ''}</div>`;
+    ${loose.length ? `<section class="bigblk"><div class="leaf-h"><b>미분류</b></div><div class="tiles">${loose.map(tileHTML).join('')}</div></section>` : ''}</div>`;
 }
 function renderListGrid() {
   if (!$('#listGrid')) return;
