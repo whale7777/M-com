@@ -1,10 +1,11 @@
-import { CONFIG } from './config.js?v=12';
-import { $, $$, esc, clone, safeColor, safeLink, num, fmtDT, fmtDate, richText, ID_RE, toast, triggerDownload, DAY, PYNEST_URL } from './util.js?v=12';
-import { DEFAULT_TAX, DEFAULT_SITE, DEFAULT_MENU, DEFAULT_PLANS, DEFAULT_BANNERS } from './defaults.js?v=12';
-import { demoBackend, supabaseBackend } from './backend.js?v=12';
-import { S, subj, unitOf, findUnit, unitPath, unitIds, flatUnits, created, isNew, visibleFiles, unlocked, canMain, canSol, buyable, claimable, hasPreview } from './state.js?v=12';
-import { bindAdmin, openAdmin, adminClick } from './admin.js?v=12';
-import { pencil, startEdit, cancelEdit, commitEdit, newPageHTML, afterNewPage, filePanelHTML, openFilePanel, bindEditor } from './editor.js?v=12';
+import { CONFIG } from './config.js?v=13';
+import { $, $$, esc, clone, safeColor, safeLink, num, fmtDT, fmtDate, richText, ID_RE, toast, triggerDownload, DAY, PYNEST_URL } from './util.js?v=13';
+import { DEFAULT_TAX, DEFAULT_SITE, DEFAULT_MENU, DEFAULT_PLANS, DEFAULT_BANNERS } from './defaults.js?v=13';
+import { demoBackend, supabaseBackend } from './backend.js?v=13';
+import { S, subj, unitOf, findUnit, unitPath, unitIds, flatUnits, created, isNew, visibleFiles, unlocked, canMain, canSol, buyable, claimable, hasPreview } from './state.js?v=13';
+import { bindAdmin, openAdmin, adminClick } from './admin.js?v=13';
+import { B, barHTML, syncSel, bulkClick, bindBulk } from './bulk.js?v=13';
+import { pencil, startEdit, cancelEdit, commitEdit, newPageHTML, afterNewPage, filePanelHTML, openFilePanel, bindEditor } from './editor.js?v=13';
 
 S.DEMO = !CONFIG.SUPABASE_URL || /여기에/.test(CONFIG.SUPABASE_URL) || new URLSearchParams(location.search).has('demo');
 const demoFlags = {};
@@ -129,6 +130,7 @@ async function route() {
   const { parts, q } = parseHash();
   const head = parts[0] || '';
   let cur = 'home', html = '', post = null;
+  if (location.hash !== B.hash) { B.sel.clear(); B.hash = location.hash; }
   Object.assign(view, { s: 'all', u: 'all', tier: 'all', sort: 'new', q: '', mode: '' });
 
   if (head === 'f') {
@@ -156,7 +158,7 @@ async function route() {
     if (['new', 'pop', 'easy', 'hard', 'title'].includes(q.sort)) view.sort = q.sort;
     view.q = (q.q || '').slice(0, 60);
     html = listHTML();
-    post = () => { if (!$('#tierSel')) return; $('#tierSel').value = view.tier; $('#sortSel').value = view.sort; renderListGrid(); };
+    post = () => { if (!$('#tierSel')) { syncSel(); return; } $('#tierSel').value = view.tier; $('#sortSel').value = view.sort; renderListGrid(); syncSel(); };
   } else {
     html = homeHTML(); post = startCarousel;
   }
@@ -290,21 +292,27 @@ function listHTML() {
       <div class="list-head"><h1>${sj ? `${esc(sj.emoji)} ${esc(sj.name)}${un ? ` <small>› ${esc(un.name)}</small>` : ''}` : view.q ? `‘${esc(view.q)}’ 검색 결과` : '전체 자료'} <span id="listCount"></span></h1>
         ${S.isAdmin && sj ? `<button class="btn primary sm" data-act="admin-new" data-s="${esc(sj.id)}" data-u="${un ? esc(un.id) : ''}" type="button">＋ ${un ? '이 단원' : '이 과목'}에 자료 올리기</button>` : ''}
         ${sj ? `<a class="btn ghost sm" href="${folder ? `#/${encodeURIComponent(sj.id)}${un ? '/' + encodeURIComponent(un.id) : ''}?mode=list` : `#/${encodeURIComponent(sj.id)}${un ? '/' + encodeURIComponent(un.id) : ''}`}">${folder ? '☰ 목록으로 보기' : '📁 폴더로 보기'}</a>` : ''}
+        ${S.isAdmin && folder && !B.on ? '<button class="btn ghost sm" data-bulk="enter" type="button">☑ 선택 관리</button>' : ''}
         ${folder ? '' : `<div class="controls">
           <select id="tierSel" aria-label="등급"><option value="all">모든 자료</option><option value="free">무료</option><option value="premium">프리미엄</option></select>
           <select id="sortSel" aria-label="정렬"><option value="new">최신순</option><option value="pop">인기순</option><option value="easy">쉬운 순</option><option value="hard">어려운 순</option><option value="title">제목순</option></select>
           <input id="lq" type="search" placeholder="이 목록에서 검색" value="${esc(view.q)}">
         </div>`}</div>
       ${folder ? folderHTML(sj, un) : '<div id="listGrid"></div>'}
+      ${S.isAdmin && folder && B.on ? barHTML() : ''}
     </div></div>`;
 }
 
 /* ---- 폴더형 보기: 큰 단원 › 범위 › 소단원 › 회차 칸 ---- */
 const natural = (a, b) => String(a.title).localeCompare(String(b.title), 'ko', { numeric: true });
 function tileHTML(f) {
-  const open = canMain(f);
   const lock = f.tier === 'premium' && !unlocked(f);
-  return `<div class="tl ${lock ? 'lock' : ''} ${f.visible === false ? 'hid' : ''}"><a class="tl-t" href="#/f/${encodeURIComponent(f.id)}" title="${esc(f.title)}">${esc(f.title)}${isNew(f) ? '<em class="nw">N</em>' : ''}${f.visible === false ? '<em class="hd">숨김</em>' : ''}</a>
+  if (S.isAdmin && B.on) {
+    const pr = f.price > 0 ? `${num(f.price)}P` : '무료';
+    return `<label class="tl pick ${f.visible === false ? 'hid' : ''}"><input type="checkbox" data-sel="${esc(f.id)}"><span class="tl-t">${esc(f.title)}</span><span class="tl-m">${pr}${f.visible === false ? ' · 숨김' : ''}${f.pinned ? ' · 📌' : ''}</span></label>`;
+  }
+  const open = canMain(f);
+  return `<div class="tl ${lock ? 'lock' : ''} ${f.visible === false ? 'hid' : ''}"><a class="tl-t" href="#/f/${encodeURIComponent(f.id)}">${esc(f.title)}${isNew(f) ? '<em class="nw">N</em>' : ''}${f.visible === false ? '<em class="hd">숨김</em>' : ''}</a>
     ${open ? `<button class="tl-i" data-dl="${esc(f.id)}" type="button" aria-label="다운로드">⬇</button>` : `<a class="tl-i" href="#/f/${encodeURIComponent(f.id)}" aria-label="자세히">${buyable(f) ? '🪙' : '🔒'}</a>`}</div>`;
 }
 const treeDepth = (units) => Math.max(0, ...(units || []).map((u) => 1 + treeDepth(u.children)));
@@ -342,14 +350,15 @@ function folderHTML(sj, un) {
   const files = S.files.filter((f) => f.visible !== false || S.isAdmin);
   const blocks = blocksOf(sj, un ? [un] : (sj.units || []), un ? unitPath(sj, un.id).slice(0, -1).map((x) => x.name) : [], files, []);
   const loose = un ? [] : files.filter((f) => f.subject === sj.id && !findUnit(sj, f.unit)).sort(natural);
-  const add = (id) => S.isAdmin ? `<button class="linkbtn" data-act="admin-new" data-s="${esc(sj.id)}" data-u="${esc(id)}" type="button">＋ 자료</button>` : '';
-  const small = (l) => `<div class="leaf sm"><div class="leaf-h"><b>${esc(l.u.name)}</b>${add(l.u.id)}</div>
+  const gsel = () => (S.isAdmin && B.on ? '<label class="gsel"><input type="checkbox" data-gsel> 전체 선택</label>' : '');
+  const add = (id) => S.isAdmin && !B.on ? `<button class="linkbtn" data-act="admin-new" data-s="${esc(sj.id)}" data-u="${esc(id)}" type="button">＋ 자료</button>` : '';
+  const small = (l) => `<div class="leaf sm"><div class="leaf-h"><b>${esc(l.u.name)}</b>${gsel()}${add(l.u.id)}</div>
     ${l.mine.length ? `<div class="tiles">${l.mine.map(tileHTML).join('')}</div>` : '<p class="note">아직 올라온 자료가 없어요.</p>'}</div>`;
-  const card = (b) => `<section class="bigblk"><div class="leaf-h"><b>${b.trail.length ? `<span class="trail">${b.trail.map(esc).join(' › ')} › </span>` : ''}${esc(b.u.name)}</b>${add(b.u.id)}</div>
+  const card = (b) => `<section class="bigblk"><div class="leaf-h"><b>${b.trail.length ? `<span class="trail">${b.trail.map(esc).join(' › ')} › </span>` : ''}${esc(b.u.name)}</b>${gsel()}${add(b.u.id)}</div>
     ${b.own.length ? `<div class="tiles own">${b.own.map(tileHTML).join('')}</div>` : ''}
     ${b.leaves.length ? `<div class="smalls">${b.leaves.map(small).join('')}</div>` : (!b.own.length ? '<p class="note">아직 올라온 자료가 없어요.</p>' : '')}</section>`;
   return `${cascadeHTML(sj, un)}<div class="folder">${blocks.map(card).join('') || '<p class="empty">아직 단원이 없어요. 관리자 › 과목·단원에서 폴더를 만들어줘.</p>'}
-    ${loose.length ? `<section class="bigblk"><div class="leaf-h"><b>미분류</b></div><div class="tiles">${loose.map(tileHTML).join('')}</div></section>` : ''}</div>`;
+    ${loose.length ? `<section class="bigblk"><div class="leaf-h"><b>미분류</b>${gsel()}</div><div class="tiles">${loose.map(tileHTML).join('')}</div></section>` : ''}</div>`;
 }
 function renderListGrid() {
   if (!$('#listGrid')) return;
@@ -749,6 +758,7 @@ function bind() {
   window.addEventListener('hashchange', route);
   $('#buyOk').onclick = confirmBuy;
   bindEditor();
+  bindBulk();
   $('#buyCharge').onclick = () => { $('#dlgBuy').close(); navigate('#/points'); };
 
   // 목록 필터 (페이지가 다시 그려져도 동작하도록 위임)
@@ -798,6 +808,7 @@ function bind() {
     if (d.edno !== undefined) return cancelEdit(t);
     if (d.srcopen !== undefined) return openFilePanel(d.srcopen);
     if (d.srcclose !== undefined) return $('#formSrc')?.classList.add('hidden');
+    if (d.bulk) return bulkClick(d.bulk);
     if (d.adm) return adminQuick(d.adm, d.id);
     if (d.claim !== undefined) return openBuy(d.claim, 'claim');
     if (d.buypass !== undefined) return openBuy(d.buypass, 'pass');

@@ -3,9 +3,9 @@
    - 설정 창을 따로 열지 않고, 자료를 연 화면에서 제목·가격·설명을 바로 수정해요.
    - 가격이 0이면 무료, 1 이상이면 프리미엄으로 자동 정해져요.
    ===================================================================== */
-import { $, $$, esc, num, toast, extractDriveId, MAX_UPLOAD_MB, fmtSize, safeColor } from './util.js?v=12';
-import { S, subj, flatUnits, findUnit } from './state.js?v=12';
-import { DEFAULT_PRICE } from './defaults.js?v=12';
+import { $, $$, esc, num, toast, extractDriveId, MAX_UPLOAD_MB, fmtSize, safeColor } from './util.js?v=13';
+import { S, subj, flatUnits, findUnit } from './state.js?v=13';
+import { DEFAULT_PRICE } from './defaults.js?v=13';
 
 export const MAX_PRICE = 1000000;
 const LV = ['', '기본', '표준', '심화'];
