@@ -146,7 +146,7 @@ PyNest 와 **같은 Supabase 프로젝트**를 쓰기 때문에, PyNest 의 ID·
 |---|---|
 | OWNER | 전부 + ADMIN 임명/해임 |
 | ADMIN | 전부 (ADMIN 임명/해임·OWNER 변경 제외), TEACHER/MOD 임명 가능 |
-| TEACHER | 자료·과목·단원(폴더)·파일 올리기/고치기 (PyNest: 강의·문제집·문제·숙제) |
+| TEACHER | 자료·과목·단원(폴더)·파일 올리기/고치기 (PyNest: 강의·문제집·문제·숙제·제출함·채점) |
 | MOD | 관리만: 공지, M패스 부여, 충전/패스 신청 승인, 회원 승인/중지, 글·댓글 삭제 |
 
 - 권한표를 바꾸려면 `staff_roles.sql` 의 `staff_can()` 과 `state.js` 의 `PERMS` 를 같이 고치세요.

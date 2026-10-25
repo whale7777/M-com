@@ -50,7 +50,7 @@ export const ROLES = {
 const PERMS = {
   owner: () => true,
   admin: (p) => p !== 'roles_admin',
-  teacher: (p) => p === 'content',
+  teacher: (p) => p === 'content' || p === 'review',
   mod: (p) => ['notice', 'pass', 'charge', 'finance_read', 'members', 'moderate'].includes(p),
 };
 export const can = (perm) => !!(S.role && PERMS[S.role] && PERMS[S.role](perm));
