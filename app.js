@@ -1,6 +1,6 @@
 import { CONFIG } from './config.js';
 import { $, $$, esc, clone, safeColor, safeLink, num, fmtDT, ID_RE, toast, triggerDownload, DAY } from './util.js';
-import { DEFAULT_TAX, DEFAULT_SITE } from './defaults.js';
+import { DEFAULT_TAX, DEFAULT_SITE, DEFAULT_MENU } from './defaults.js';
 import { demoBackend, supabaseBackend } from './backend.js';
 import { S, subj, unitOf, created, isNew, visibleFiles, unlocked, canMain, canSol, buyable } from './state.js';
 import { bindAdmin, openAdmin, adminClick } from './admin.js';
@@ -27,6 +27,39 @@ function renderHeader() {
       (S.isAdmin ? '<i class="badge admin">ADMIN</i>' : S.hasPass ? '<i class="badge m">M PASS</i>' : '') +
       `<b class="pts">🪙 ${num(S.points)} P</b>`;
   }
+  renderDrawerUser();
+}
+function renderDrawerUser() {
+  $('#drUser').innerHTML = S.user
+    ? `<div class="dr-who"><b>${esc(S.user.username)}</b>${S.isAdmin ? '<i class="badge admin">ADMIN</i>' : S.hasPass ? '<i class="badge m">M PASS</i>' : ''}</div>
+       <div class="dr-pts"><span>🪙 ${num(S.points)} P</span><a href="#/points">충전</a></div>
+       <button class="btn ghost sm" data-act="logout" type="button">로그아웃</button>`
+    : `<button class="btn primary block" data-act="login" type="button">로그인</button>${CONFIG.ALLOW_SIGNUP ? '<button class="btn ghost block" data-act="signup" type="button">회원가입</button>' : ''}`;
+}
+
+/* ---- 왼쪽 메뉴 패널 ---- */
+function openDrawer() { $('#drawer').classList.add('open'); $('#drawerBg').classList.add('open'); $('#drawer').setAttribute('aria-hidden', 'false'); document.body.classList.add('no-scroll'); }
+function closeDrawer() { $('#drawer').classList.remove('open'); $('#drawerBg').classList.remove('open'); $('#drawer').setAttribute('aria-hidden', 'true'); document.body.classList.remove('no-scroll'); }
+const hashKey = (h) => { const x = String(h || '#/').split('?')[0].replace(/\/$/, ''); return x === '#' || x === '' ? '#/' : x; };
+function menuItemHTML(m) {
+  if (m.on === false) return '';
+  if (m.type === 'heading') return `<div class="dr-h">${esc(m.label)}</div>`;
+  if (m.type === 'subjects') {
+    return S.tax.map((s) => {
+      const open = route.cur === 'list' && view.s === s.id;
+      const base = `#/${encodeURIComponent(s.id)}`;
+      return `<details class="dr-sub" style="--c:${safeColor(s.color)}" ${open ? 'open' : ''}><summary>${esc(s.emoji)} ${esc(s.name)}</summary>
+        <a class="dr-link ${open && view.u === 'all' ? 'on' : ''}" href="${base}">전체 보기</a>` +
+        (s.units || []).map((u) => `<a class="dr-link ${open && view.u === u.id ? 'on' : ''}" href="${base}/${encodeURIComponent(u.id)}">${esc(u.name)}</a>`).join('') + '</details>';
+    }).join('');
+  }
+  const link = safeLink(m.link);
+  const on = !/^https?:/.test(link) && hashKey(link) === hashKey(location.hash);
+  return `<a class="dr-item ${on ? 'on' : ''}" ${linkAttrs(m.link)}><span class="dr-e">${esc(m.emoji || '•')}</span>${esc(m.label)}${/^https?:/.test(link) ? '<em>↗</em>' : ''}</a>`;
+}
+function renderDrawerNav() {
+  const items = Array.isArray(S.site.menu) && S.site.menu.length ? S.site.menu : DEFAULT_MENU;
+  $('#drNav').innerHTML = items.map(menuItemHTML).join('') || menuItemHTML(DEFAULT_MENU[0]);
 }
 
 function renderChrome() {
@@ -37,13 +70,10 @@ function renderChrome() {
   $('#year').textContent = new Date().getFullYear();
   $('#aboutShort').textContent = (S.site.about || '').split('\n')[0];
   $('#ftPynest').href = safeLink(CONFIG.PYNEST_URL || '#/');
-  const cat = (href, label, on, units) =>
-    `<div class="cat ${on ? 'on' : ''}"><a href="${href}">${label}</a>${units ? `<div class="drop">${units}</div>` : ''}</div>`;
-  $('#cats').innerHTML =
-    cat('#/', '홈', route.cur === 'home') + cat('#/list', '전체 자료', route.cur === 'list' && view.s === 'all') +
-    S.tax.map((s) => cat(`#/${encodeURIComponent(s.id)}`, `${esc(s.emoji)} ${esc(s.name)}`, route.cur === 'list' && view.s === s.id,
-      (s.units || []).map((u) => `<a href="#/${encodeURIComponent(s.id)}/${encodeURIComponent(u.id)}">${esc(u.name)}</a>`).join(''))).join('') +
-    '<span class="cat-sp"></span>' + cat('#/pass', '👑 M패스', route.cur === 'pass') + cat('#/points', '🪙 M포인트', route.cur === 'points') + cat('#/about', '이용안내', route.cur === 'about');
+  const py = safeLink(CONFIG.PYNEST_URL || '#/');
+  $('#swPynest').href = py;
+  $('#swPynest2').href = py;
+  renderDrawerNav();
 }
 
 /* =====================================================================
@@ -94,6 +124,7 @@ function navigate(h) { if (location.hash === h) route(); else location.hash = h;
 async function route() {
   const my = ++tok;
   clearInterval(carouselTimer);
+  closeDrawer();
   const { parts, q } = parseHash();
   const head = parts[0] || '';
   let cur = 'home', html = '', post = null;
@@ -511,6 +542,11 @@ function bind() {
   $('#formAuth').onsubmit = submitAuth;
   $('#btnLogout').onclick = () => S.api.logout();
   $('#btnAdmin').onclick = openAdmin;
+  $('#btnMenu').onclick = openDrawer;
+  $('#btnMenuClose').onclick = closeDrawer;
+  $('#drawerBg').onclick = closeDrawer;
+  document.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeDrawer(); });
+  $('#drawer').addEventListener('click', (e) => { if (e.target.closest('a[href]')) closeDrawer(); }); // 링크를 누르면 패널이 닫혀요
   $('#gform').onsubmit = (e) => {
     e.preventDefault();
     const q = $('#gq').value.trim();
@@ -553,8 +589,9 @@ function bind() {
     if (!t) return;
     const d = t.dataset;
     if (t.matches('[data-close]')) return t.closest('dialog').close();
-    if (d.act === 'login') return openAuth('login');
-    if (d.act === 'signup') return openAuth('signup');
+    if (d.act === 'logout') { closeDrawer(); return S.api.logout(); }
+    if (d.act === 'login') { closeDrawer(); return openAuth('login'); }
+    if (d.act === 'signup') { closeDrawer(); return openAuth('signup'); }
     if (d.act === 'preview') {
       const id = (location.hash.match(/#\/f\/([^?]+)/) || [])[1];
       const f = S.files.find((x) => x.id === decodeURIComponent(id || ''));
@@ -633,6 +670,8 @@ S.hooks.refreshUser = refreshUserState;
     const m = await S.api.loadMeta();
     if (Array.isArray(m.tax)) S.tax = m.tax;
     if (m.site) S.site = { ...clone(DEFAULT_SITE), ...m.site };
+    // 예전에 저장된 PyNest 배너 주소(대소문자가 틀린 기본값)는 설정 파일 주소를 따라가게 바꿔줘요
+    (S.site.banners || []).forEach((b) => { if (b.id === 'b_pynest' && /^https?:\/\/whale7777\.github\.io\/pynest\/?$/.test(b.link || '')) b.link = '@pynest'; });
   } catch (e) { console.warn('meta 로드 실패 (기본값 사용)', e); }
   await loadFiles();
   renderHeader();

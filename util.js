@@ -1,3 +1,4 @@
+import { CONFIG } from './config.js';
 export const DAY = 864e5;
 export const $ = (s, r = document) => r.querySelector(s);
 export const $$ = (s, r = document) => [...r.querySelectorAll(s)];
@@ -13,6 +14,7 @@ export const ID_RE = /^[a-z0-9_]{3,20}$/; // PyNest 와 같은 ID 규칙
 // 링크는 http(s) 또는 사이트 안 주소(#...)만 허용
 export const safeLink = (u) => {
   const s = String(u || '').trim();
+  if (s === '@pynest') return CONFIG.PYNEST_URL || '#/'; // 설정 파일의 PyNest 주소로 바뀌는 약속된 글자
   if (/^#/.test(s)) return s;
   return /^https?:\/\//i.test(s) ? s : '#/';
 };

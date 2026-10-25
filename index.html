@@ -4,6 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>민혁닷컴 — 과학 문제 PDF</title>
+<meta name="color-scheme" content="light">
 <meta name="description" content="물리·화학·생물·지구과학 엄선 문제 PDF">
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.min.css">
 <link rel="stylesheet" href="style.css">
@@ -13,20 +14,34 @@
 
 <header class="top">
   <div class="wrap top-in">
+    <button id="btnMenu" class="hamb" type="button" aria-label="메뉴 열기" aria-controls="drawer"><i></i><i></i><i></i></button>
     <a class="logo" href="#/">민혁<span>.com</span></a>
     <form class="gsearch" id="gform" role="search">
       <input id="gq" type="search" placeholder="단원·제목으로 문제 세트 찾기" aria-label="검색">
       <button type="submit" aria-label="검색">🔍</button>
     </form>
     <div class="top-right">
-      <button id="btnAdmin" class="btn ghost sm hidden" type="button">⚙️ 관리자</button>
+      <a id="swPynest" class="btn ghost sm site-sw" href="#/" target="_blank" rel="noopener" title="PyNest 로 이동">🐍<span class="lbl"> PyNest</span></a>
+      <button id="btnAdmin" class="btn ghost sm hidden" type="button" title="관리자">⚙️<span class="lbl"> 관리자</span></button>
       <a id="userChip" class="user-chip hidden" href="#/me"></a>
       <button id="btnLogin" class="btn primary sm" type="button">로그인</button>
-      <button id="btnLogout" class="btn ghost sm hidden" type="button">로그아웃</button>
+      <button id="btnLogout" class="btn ghost sm desk-only hidden" type="button">로그아웃</button>
     </div>
   </div>
-  <nav class="cats"><div class="wrap" id="cats"></div></nav>
 </header>
+
+<!-- 왼쪽 메뉴 패널 -->
+<div id="drawerBg" class="drawer-bg"></div>
+<aside id="drawer" class="drawer" aria-hidden="true" aria-label="메뉴">
+  <div class="dr-head"><a class="logo" href="#/">민혁<span>.com</span></a><button id="btnMenuClose" class="btn ghost sm" type="button" aria-label="메뉴 닫기">✕</button></div>
+  <div class="dr-user" id="drUser"></div>
+  <nav class="dr-nav" id="drNav"></nav>
+  <div class="dr-sites">
+    <span>사이트 이동</span>
+    <a class="dr-site on" id="swMcom" href="#/">🔬 민혁닷컴 <em>현재</em></a>
+    <a class="dr-site" id="swPynest2" href="#/" target="_blank" rel="noopener">🐍 PyNest <em>↗</em></a>
+  </div>
+</aside>
 
 <main id="view" class="wrap"></main>
 
@@ -81,6 +96,7 @@
     <button class="tab" data-tab="tabPoints" type="button">M포인트</button>
     <button class="tab" data-tab="tabPass" type="button">M패스</button>
     <button class="tab" data-tab="tabBanner" type="button">홈 배너</button>
+    <button class="tab" data-tab="tabMenu" type="button">메뉴</button>
     <button class="tab" data-tab="tabSite" type="button">사이트 설정</button>
   </div>
 
@@ -193,6 +209,19 @@
       <button class="btn ghost" id="btnAddBanner" type="button">＋ 배너 추가</button>
       <span id="bannerDirtyMsg" class="note hidden">저장 안 한 변경사항이 있어요</span>
       <button class="btn primary" id="btnSaveBanner" type="button" disabled>배너 저장</button>
+    </div>
+  </div>
+
+  <div id="tabMenu" class="tabpane hidden">
+    <p class="note">왼쪽 ☰ 메뉴 패널에 나오는 항목이에요. 이름·이모지·연결 주소·순서를 바꾸고 <b>메뉴 저장</b>을 눌러요.<br>
+      연결 주소: <code>#/pass</code> 같은 사이트 안 주소 또는 <code>https://…</code>. PyNest 는 <code>@pynest</code> 라고 쓰면 설정 파일의 주소로 연결돼요.</p>
+    <div id="menuList" class="list"></div>
+    <div class="sticky-save">
+      <button class="btn ghost" id="btnAddMenuLink" type="button">＋ 링크</button>
+      <button class="btn ghost" id="btnAddMenuHead" type="button">＋ 구분 제목</button>
+      <button class="btn ghost" id="btnAddMenuSubj" type="button">＋ 과목 자동 목록</button>
+      <span id="menuDirtyMsg" class="note hidden">저장 안 한 변경사항이 있어요</span>
+      <button class="btn primary" id="btnSaveMenu" type="button" disabled>메뉴 저장</button>
     </div>
   </div>
 

@@ -1,7 +1,8 @@
 import { $, $$, esc, clone, uid, safeColor, fmtDate, fmtDT, num, ID_RE, toast, extractDriveId, saveBlob, move, DAY } from './util.js';
 import { S, subj, unitOf, created } from './state.js';
+import { DEFAULT_MENU } from './defaults.js';
 
-let editId = null, taxDraft = null, taxDirty = false, bannerDraft = null, bannerDirty = false;
+let editId = null, taxDraft = null, taxDirty = false, bannerDraft = null, bannerDirty = false, menuDraft = null, menuDirty = false;
 let passCache = [], pointsCache = [], chargesCache = [], ledgerCache = [];
 
 function passStatus(p) {
@@ -20,6 +21,7 @@ export async function openAdmin() {
   fillSubjectSelects();
   taxDraft = clone(S.tax); taxDirty = false; renderTaxAdmin();
   bannerDraft = clone(S.site.banners || []); bannerDirty = false; renderBannerAdmin();
+  menuDraft = clone(S.site.menu && S.site.menu.length ? S.site.menu : DEFAULT_MENU); menuDirty = false; renderMenuAdmin();
   fillSiteForm();
   await Promise.all([refreshPass(), refreshPoints()]);
   switchTab('tabDash');
@@ -343,7 +345,7 @@ function renderBannerAdmin() {
         <label>제목 (줄바꿈 가능)<textarea data-bf="title" rows="2">${esc(b.title || '')}</textarea></label>
         <label>설명<input data-bf="sub" value="${esc(b.sub || '')}"></label>
         <div class="row"><label>버튼 글자<input data-bf="cta" value="${esc(b.cta || '')}"></label>
-          <label class="grow">연결 주소 (#/pass, #/points, #/list?tier=free, https://…)<input data-bf="link" value="${esc(b.link || '')}"></label></div>
+          <label class="grow">연결 주소 (#/pass, #/points, https://…, PyNest 는 @pynest)<input data-bf="link" value="${esc(b.link || '')}"></label></div>
       </div></div>`).join('') || '<p class="note">배너가 없어요. 아래에서 추가해줘.</p>';
   $('#btnSaveBanner').disabled = !bannerDirty;
   $('#bannerDirtyMsg').classList.toggle('hidden', !bannerDirty);
@@ -356,6 +358,44 @@ async function saveBanners() {
     S.site = site; bannerDraft = clone(next); bannerDirty = false;
     renderBannerAdmin(); await S.hooks.route();
     toast('배너 저장 완료 ✨');
+  } catch (err) { console.error(err); toast(FAIL); }
+}
+
+/* ---- 메뉴 (왼쪽 ☰ 패널) ---- */
+function markMenuDirty() {
+  menuDirty = true;
+  $('#btnSaveMenu').disabled = false;
+  $('#menuDirtyMsg').classList.remove('hidden');
+}
+const MENU_KIND = { link: '링크', heading: '구분 제목', subjects: '과목·단원 자동 목록' };
+function renderMenuAdmin() {
+  $('#menuList').innerHTML = menuDraft.map((m, i) => `
+    <div class="tax-card menu-card" data-mi="${i}">
+      <div class="tax-head">
+        <label class="check"><input type="checkbox" data-mf="on" ${m.on !== false ? 'checked' : ''}> 표시</label>
+        <i class="pill">${MENU_KIND[m.type] || m.type}</i>
+        ${m.type === 'link' ? `<input class="emo" data-mf="emoji" value="${esc(m.emoji || '')}" maxlength="4" aria-label="이모지">` : ''}
+        ${m.type === 'subjects' ? '<span class="grow note" style="margin:0">과목·단원 탭에서 만든 과목이 자동으로 들어가요</span>'
+          : `<input class="grow" data-mf="label" value="${esc(m.label || '')}" aria-label="이름" placeholder="${m.type === 'heading' ? '구분 제목' : '메뉴 이름'}">`}
+        <button class="btn sm" data-mmove="up" type="button">↑</button>
+        <button class="btn sm" data-mmove="down" type="button">↓</button>
+        <button class="btn sm danger" data-mdel type="button">삭제</button>
+      </div>
+      ${m.type === 'link' ? `<div class="form"><label>연결 주소 (#/pass, #/list?tier=free, https://…, PyNest 는 @pynest)<input data-mf="link" value="${esc(m.link || '')}"></label></div>` : ''}
+    </div>`).join('') || '<p class="note">메뉴가 비어 있어요. 아래에서 추가해줘. (비워두고 저장하면 기본 메뉴로 돌아가요)</p>';
+  $('#btnSaveMenu').disabled = !menuDirty;
+  $('#menuDirtyMsg').classList.toggle('hidden', !menuDirty);
+}
+async function saveMenu() {
+  const next = menuDraft.map((m) => ({ ...m, label: (m.label || '').trim(), link: (m.link || '').trim(), emoji: (m.emoji || '').trim() }))
+    .filter((m) => m.type === 'subjects' || m.label);
+  if (next.some((m) => m.type === 'link' && !m.link)) return toast('연결 주소가 빈 메뉴가 있어');
+  try {
+    const site = { ...S.site, menu: next.length ? next : clone(DEFAULT_MENU) };
+    await S.api.saveSite(site);
+    S.site = site; menuDraft = clone(site.menu); menuDirty = false;
+    renderMenuAdmin(); await S.hooks.route();
+    toast('메뉴 저장 완료 ✨ (☰ 눌러서 확인해봐)');
   } catch (err) { console.error(err); toast(FAIL); }
 }
 
@@ -442,6 +482,18 @@ export function bindAdmin() {
   };
   $('#btnSaveBanner').onclick = saveBanners;
 
+  $('#menuList').addEventListener('input', (e) => {
+    const el = e.target, f = el.dataset.mf;
+    if (!f) return;
+    menuDraft[+el.closest('.menu-card').dataset.mi][f] = el.type === 'checkbox' ? el.checked : el.value;
+    markMenuDirty();
+  });
+  const addMenu = (item) => { menuDraft.push({ id: uid('m'), on: true, ...item }); markMenuDirty(); renderMenuAdmin(); };
+  $('#btnAddMenuLink').onclick = () => addMenu({ type: 'link', emoji: '🔗', label: '새 메뉴', link: '#/list' });
+  $('#btnAddMenuHead').onclick = () => addMenu({ type: 'heading', label: '새 구분 제목' });
+  $('#btnAddMenuSubj').onclick = () => addMenu({ type: 'subjects', label: '과목·단원 (자동)' });
+  $('#btnSaveMenu').onclick = saveMenu;
+
   $('#ptSearch').oninput = renderAdminPoints;
   $('#formPoints').onsubmit = submitPoints;
   $('#pSearch').oninput = renderAdminPass;
@@ -494,6 +546,13 @@ export async function adminClick(e, t) {
     const bi = +bcard.dataset.bi;
     if (d.bmove) { if (move(bannerDraft, bi, d.bmove)) { markBannerDirty(); renderBannerAdmin(); } return true; }
     if (t.matches('[data-bdel]')) { bannerDraft.splice(bi, 1); markBannerDirty(); renderBannerAdmin(); return true; }
+  }
+
+  const mcard = t.closest('#menuList .menu-card');
+  if (mcard) {
+    const mi = +mcard.dataset.mi;
+    if (d.mmove) { if (move(menuDraft, mi, d.mmove)) { markMenuDirty(); renderMenuAdmin(); } return true; }
+    if (t.matches('[data-mdel]')) { menuDraft.splice(mi, 1); markMenuDirty(); renderMenuAdmin(); return true; }
   }
 
   if (d.cok !== undefined) { await resolveCharge(d.cok, true); return true; }

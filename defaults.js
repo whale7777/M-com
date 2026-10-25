@@ -18,7 +18,21 @@ export const DEFAULT_TAX = [
 export const DEFAULT_BANNERS = [
   { id: 'b_pass', on: true, title: 'M패스 하나로\n프리미엄 전 자료 무제한', sub: '신규 세트가 올라와도 추가 결제 없이 문제·해설 모두 다운로드', cta: 'M패스 알아보기', link: '#/pass', color: '#4f46e5', emoji: '👑' },
   { id: 'b_point', on: true, title: '필요한 세트만 골라서\nM포인트로 구매', sub: '충전 신청 → 승인 → 바로 다운로드. 한 번 산 자료는 계속 받을 수 있어요', cta: 'M포인트 충전하기', link: '#/points', color: '#0ea5a4', emoji: '🪙' },
-  { id: 'b_pynest', on: true, title: '파이썬은 PyNest에서\n수업과 과제를 한 곳에', sub: '민혁닷컴 계정(ID)으로 그대로 로그인할 수 있어요', cta: 'PyNest 바로가기', link: CONFIG.PYNEST_URL || '#/', color: '#e8590c', emoji: '🐍' },
+  { id: 'b_pynest', on: true, title: '파이썬은 PyNest에서\n수업과 과제를 한 곳에', sub: '민혁닷컴 계정(ID)으로 그대로 로그인할 수 있어요', cta: 'PyNest 바로가기', link: '@pynest', color: '#e8590c', emoji: '🐍' },
+];
+
+// 왼쪽 메뉴 패널 (관리자 > 메뉴 탭에서 수정). type: link(링크) / heading(구분 제목) / subjects(과목·단원 자동 목록)
+export const DEFAULT_MENU = [
+  { id: 'm_home', type: 'link', on: true, emoji: '🏠', label: '홈', link: '#/' },
+  { id: 'm_all', type: 'link', on: true, emoji: '📚', label: '전체 자료', link: '#/list' },
+  { id: 'm_h1', type: 'heading', on: true, label: '과목별 자료' },
+  { id: 'm_subj', type: 'subjects', on: true, label: '과목·단원 (자동)' },
+  { id: 'm_h2', type: 'heading', on: true, label: '이용하기' },
+  { id: 'm_pass', type: 'link', on: true, emoji: '👑', label: 'M패스', link: '#/pass' },
+  { id: 'm_points', type: 'link', on: true, emoji: '🪙', label: 'M포인트 충전', link: '#/points' },
+  { id: 'm_me', type: 'link', on: true, emoji: '👤', label: '내 정보', link: '#/me' },
+  { id: 'm_about', type: 'link', on: true, emoji: '📖', label: '이용안내', link: '#/about' },
+  { id: 'm_pynest', type: 'link', on: true, emoji: '🐍', label: 'PyNest로 이동', link: '@pynest' },
 ];
 
 export const DEFAULT_PACKS = [
@@ -36,6 +50,7 @@ export const DEFAULT_SITE = {
   about: '민혁닷컴은 물리·화학·생물·지구과학 각 단원의 좋은 문제만 10~15문항씩 묶어 PDF로 제공하는 문제 은행이에요.\n직접 풀어보고 고른 문제로, 개념을 확인하고 실전 감각을 키우는 데 맞췄어요.',
   packs: DEFAULT_PACKS,
   banners: DEFAULT_BANNERS,
+  menu: DEFAULT_MENU,
 };
 
 export const buildPrem = (tier, ids) => {

@@ -16,5 +16,7 @@ export const CONFIG = {
   ALLOW_SIGNUP: true,
 
   // 홈 배너·푸터에서 연결할 PyNest 주소 (PyNest 저장소 주소에 맞게 바꿔요)
-  PYNEST_URL: 'https://whale7777.github.io/pynest/',
+  PYNEST_URL: 'https://whale7777.github.io/PYNEST/',
+  // 민혁닷컴(이 사이트) 주소 — 드로어 메뉴의 "사이트 이동" 버튼에 쓰여요
+  MCOM_URL: 'https://whale7777.github.io/M-com/',
 };
