@@ -3,9 +3,9 @@
    - 설정 창을 따로 열지 않고, 자료를 연 화면에서 제목·가격·설명을 바로 수정해요.
    - 가격이 0이면 무료, 1 이상이면 프리미엄으로 자동 정해져요.
    ===================================================================== */
-import { $, $$, esc, num, toast, extractDriveId, MAX_UPLOAD_MB, fmtSize, safeColor } from './util.js?v=16';
-import { S, subj, flatUnits, findUnit, can } from './state.js?v=16';
-import { DEFAULT_PRICE, LEVEL_PRICE } from './defaults.js?v=16';
+import { $, $$, esc, num, toast, extractDriveId, MAX_UPLOAD_MB, fmtSize, safeColor, RENDER_URL, shrinkImage } from './util.js?v=17';
+import { S, subj, flatUnits, findUnit, can } from './state.js?v=17';
+import { DEFAULT_PRICE, LEVEL_PRICE } from './defaults.js?v=17';
 
 export const MAX_PRICE = 1000000;
 const LV = ['', '기본', '표준', '심화'];
@@ -20,8 +20,8 @@ export async function applyEdit(f, ch = {}, extra = {}) {
   let p = {};
   try { p = await S.api.getPremium(f.id); } catch { /* 없으면 빈 값 */ }
   const ids = {
-    main: f.mainSrc === 'upload' ? null : ((f.tier === 'free' ? f.driveId : p.driveId) || null),
-    solution: !f.hasSolution || f.solutionSrc === 'upload' ? null : (p.solutionId || null),
+    main: (f.mainSrc || 'drive') !== 'drive' ? null : ((f.tier === 'free' ? f.driveId : p.driveId) || null),
+    solution: !f.hasSolution || (f.solutionSrc || 'drive') !== 'drive' ? null : (p.solutionId || null),
     ...(extra.ids || {}),
   };
   const m = { ...f, ...ch };
@@ -51,20 +51,33 @@ export function showErr(form, err) {
   toast('저장 실패 — 빨간 글씨를 확인해줘');
 }
 
+// 힌트 없이 안내 글을 그대로 보여줘요 (JSON 검사 결과처럼 여러 줄일 때)
+function showMsg(form, text) {
+  let box = $('.file-err', form);
+  if (!box) { box = document.createElement('p'); box.className = 'file-err'; form.appendChild(box); }
+  box.textContent = '⚠️ ' + text;
+  box.classList.remove('hidden');
+  toast(text.split('\n')[0].slice(0, 60));
+}
+
 /* ---------- 파일 소스 (문제 / 해설 / 미리보기: 없음 · 드라이브 링크 · 파일 업로드) ---------- */
 export function srcFieldsHTML(mainDefault = 'upload') {
   const seg = (kind, modes) => `<div class="seg">${modes.map(([v, l]) => `<label><input type="radio" name="${kind}_mode" value="${v}"${(kind === 'main' ? mainDefault : 'none') === v ? ' checked' : ''}> ${l}</label>`).join('')}</div>`;
   const D = [['drive', '드라이브 링크'], ['upload', '파일 업로드']];
-  const N = [['none', '없음'], ...D];
-  return `<fieldset class="src" data-kind="main"><legend>📄 문제 PDF</legend>${seg('main', D)}
+  const M = RENDER_URL ? [...D, ['json', '민혁 JSON (서버가 PDF로 변환)']] : D;
+  const N = [['none', '없음'], ...M.map(([v, l]) => (v === 'json' ? ['json', '같은 JSON에서 자동 생성'] : [v, l]))];
+  return `<fieldset class="src" data-kind="main"><legend>📄 문제 PDF</legend>${seg('main', M)}
       <input name="drive" data-for="drive" placeholder="https://drive.google.com/file/d/..../view">
       <input name="main_file" data-for="upload" type="file" accept="application/pdf,.pdf">
+      <label class="jl" data-for="json">문제 JSON (.json)<input name="main_json" type="file" accept="application/json,.json"></label>
+      <label class="jl" data-for="json">그림·도표 이미지 (.png .jpg .jpeg .svg · 여러 개 선택 가능)<input name="main_imgs" type="file" accept="image/png,image/jpeg,.png,.jpg,.jpeg,.svg,image/svg+xml" multiple></label>
+      <small class="note" data-for="json">JSON 안에서 <code>"asset": "파일이름.png"</code> 로 이미지를 불러와요. 이미지는 올리기 전에 자동으로 가볍게 줄여요. 용량은 PDF의 1/10 수준이에요.</small>
       <small class="note" data-cur></small></fieldset>
     <fieldset class="src" data-kind="solution"><legend>📝 해설 PDF <small>(선택 · 구매하거나 받은 사람만 볼 수 있음)</small></legend>${seg('solution', N)}
       <input name="solution" data-for="drive" placeholder="https://drive.google.com/file/d/..../view">
       <input name="solution_file" data-for="upload" type="file" accept="application/pdf,.pdf">
       <small class="note" data-cur></small></fieldset>
-    <fieldset class="src" data-kind="preview"><legend>👁 미리보기 <small>(선택 · 샘플 1~2문제 · 누구나 볼 수 있으니 팔 내용은 넣지 마세요)</small></legend>${seg('preview', N)}
+    <fieldset class="src" data-kind="preview"><legend>👁 미리보기 <small>(선택 · 샘플 1~2문제 · 누구나 볼 수 있으니 팔 내용은 넣지 마세요)</small></legend>${seg('preview', [['none', '없음'], ...D])}
       <input name="preview" data-for="drive" placeholder="https://drive.google.com/file/d/..../view">
       <input name="preview_file" data-for="upload" type="file" accept="application/pdf,.pdf">
       <small class="note" data-cur></small></fieldset>
@@ -76,14 +89,14 @@ export function syncSrc(form) {
     $$('[data-for]', fs).forEach((el) => el.classList.toggle('hidden', el.dataset.for !== mode));
   }
 }
-const hadOf = (f) => ({ main: f.mainSrc === 'upload', solution: !!f.hasSolution && f.solutionSrc === 'upload', preview: f.previewSrc === 'upload' });
+const hadOf = (f) => ({ main: f.mainSrc === 'upload' || f.mainSrc === 'json', solution: !!f.hasSolution && (f.solutionSrc === 'upload' || f.solutionSrc === 'json'), preview: f.previewSrc === 'upload' });
 // 이미 있는 자료의 현재 상태를 폼에 채워요
 export function fillSrc(form, f, p = {}) {
   const el = form.elements;
   const had = hadOf(f);
-  el.main_mode.value = had.main ? 'upload' : 'drive';
+  el.main_mode.value = had.main ? (f.mainSrc === 'json' && RENDER_URL ? 'json' : 'upload') : 'drive';
   el.drive.value = had.main ? '' : ((f.tier === 'free' ? f.driveId : p.driveId) || '');
-  el.solution_mode.value = !f.hasSolution ? 'none' : had.solution ? 'upload' : 'drive';
+  el.solution_mode.value = !f.hasSolution ? 'none' : had.solution ? (f.solutionSrc === 'json' && RENDER_URL ? 'json' : 'upload') : 'drive';
   el.solution.value = p.solutionId || '';
   el.preview_mode.value = had.preview ? 'upload' : f.previewId ? 'drive' : 'none';
   el.preview.value = f.previewId || '';
@@ -92,10 +105,47 @@ export function fillSrc(form, f, p = {}) {
   form.dataset.had = JSON.stringify(had);
   syncSrc(form);
 }
-function readSrc(form, kind, label, had) {
+const ASSET_RE = /^[A-Za-z0-9][A-Za-z0-9_.-]{0,59}\.(png|jpe?g|svg)$/i;
+// 민혁 JSON 읽기: JSON 문법 → 이미지 이름 → (변환 서버가 있으면) 서버 검사까지
+async function readJson(form, had) {
+  const jf = form.elements.main_json.files[0];
+  const imgFiles = [...form.elements.main_imgs.files];
+  let existing = [];
+  try { existing = JSON.parse(form.dataset.imgs || '[]'); } catch { /* 새 자료 */ }
+  const images = [];
+  const seen = new Set();
+  for (const f of imgFiles) {
+    const name = f.name.replace(/\s+/g, '_');
+    if (!ASSET_RE.test(name)) return { error: `이미지 이름을 바꿔줘: "${f.name}" (영문·숫자·_-. 만, .png .jpg .jpeg .svg)` };
+    if (seen.has(name)) return { error: `같은 이름의 이미지가 두 개예요: ${name}` };
+    seen.add(name);
+    if (f.size > 20 * 1048576) return { error: `이미지가 너무 커요: ${name}` };
+    const blob = await shrinkImage(f);
+    if (blob.size > 3 * 1048576) return { error: `이미지는 3MB 이하로 줄여줘: ${name} (${fmtSize(blob.size)})` };
+    images.push({ name, blob, type: /svg/i.test(name) ? 'image/svg+xml' : /png/i.test(name) ? 'image/png' : 'image/jpeg' });
+  }
+  if (!jf) return had.main ? { mode: 'json', images } : { error: '문제 JSON 파일을 골라줘' };
+  if (jf.size > 1024 * 1024) return { error: 'JSON 파일은 1MB 이하여야 해요' };
+  let data;
+  try { data = JSON.parse((await jf.text()).replace(/^\uFEFF/, '')); } catch (e) { return { error: `JSON 문법 오류: ${e.message}` }; }
+  if (data.format !== 'mhq/1') return { error: 'JSON 맨 위에 "format": "mhq/1" 이 있어야 해요' };
+  const names = [...new Set([...existing, ...images.map((i) => i.name)])];
+  try {
+    const r = await S.api.validateMhq(data, names);
+    if (!r.ok) return { error: 'JSON 에 고칠 곳이 있어요:\n' + r.errors.slice(0, 6).join('\n') };
+    if (r.warnings?.length) toast('참고: ' + r.warnings[0]);
+  } catch (e) {
+    if (!confirm(`검사 서버에 연결하지 못했어요. (${String(e.message).slice(0, 80)})\n검사 없이 그냥 저장할까요?`)) return { error: '저장을 취소했어' };
+    const missing = [...new Set((data.questions || []).map((q) => q.visual?.asset).filter(Boolean))].filter((n) => !names.includes(n));
+    if (missing.length) return { error: `올리지 않은 이미지가 있어요: ${missing.join(', ')}` };
+  }
+  return { mode: 'json', json: new Blob([JSON.stringify(data)], { type: 'application/json' }), images };
+}
+async function readSrc(form, kind, label, had) {
   const mode = form.elements[kind + '_mode'].value;
   const linkName = { main: 'drive', solution: 'solution', preview: 'preview' }[kind];
   if (mode === 'none') return { mode };
+  if (mode === 'json') return kind === 'main' ? readJson(form, had) : { mode };
   if (mode === 'drive') {
     const id = extractDriveId(form.elements[linkName].value);
     return id ? { mode, id } : { error: `${label} 드라이브 링크를 다시 확인해줘` };
@@ -106,22 +156,25 @@ function readSrc(form, kind, label, had) {
   if (file.size > MAX_UPLOAD_MB * 1048576) return { error: `${label} 파일이 너무 커요 (${fmtSize(file.size)} / 최대 ${MAX_UPLOAD_MB}MB)` };
   return { mode, file };
 }
-export function collectSources(form) {
+export async function collectSources(form) {
   let had = { main: false, solution: false, preview: false };
   try { had = JSON.parse(form.dataset.had || '') || had; } catch { /* 새 자료 */ }
-  const main = readSrc(form, 'main', '문제 PDF', had);
-  const sol = readSrc(form, 'solution', '해설 PDF', had);
-  const prev = readSrc(form, 'preview', '미리보기', had);
+  const main = await readSrc(form, 'main', '문제 PDF', had);
+  const sol = await readSrc(form, 'solution', '해설 PDF', had);
+  const prev = await readSrc(form, 'preview', '미리보기', had);
   const bad = [main, sol, prev].find((x) => x.error);
   if (bad) return { error: bad.error };
+  if (sol.mode === 'json' && main.mode !== 'json') return { error: '"같은 JSON에서 자동 생성"은 문제를 민혁 JSON으로 올렸을 때만 쓸 수 있어요' };
   const up = {};
+  if (main.json) up.mainJson = main.json;
+  if (main.images?.length) up.images = main.images;
   if (main.file) up.main = main.file;
   if (sol.file) up.solution = sol.file;
   if (prev.file) up.preview = prev.file;
   return {
     data: {
-      mainSrc: main.mode === 'upload' ? 'upload' : 'drive',
-      hasSolution: sol.mode !== 'none', solutionSrc: sol.mode === 'upload' ? 'upload' : 'drive',
+      mainSrc: main.mode === 'upload' ? 'upload' : main.mode === 'json' ? 'json' : 'drive',
+      hasSolution: sol.mode !== 'none', solutionSrc: sol.mode === 'upload' ? 'upload' : sol.mode === 'json' ? 'json' : 'drive',
       previewSrc: prev.mode === 'upload' ? 'upload' : 'drive', previewId: prev.mode === 'drive' ? prev.id : '',
     },
     ids: { main: main.mode === 'drive' ? main.id : null, solution: sol.mode === 'drive' ? sol.id : null },
@@ -205,6 +258,8 @@ export async function openFilePanel(fid) {
   let p = {};
   try { p = await S.api.getPremium(f.id); } catch { /* 빈 값 */ }
   form.reset();
+  form.dataset.imgs = '[]';
+  if (f.mainSrc === 'json') { try { form.dataset.imgs = JSON.stringify(await S.api.listImgs(f.id)); } catch { /* 목록 실패 */ } }
   fillSrc(form, f, p);
   form.classList.remove('hidden');
   form.scrollIntoView?.({ behavior: 'smooth', block: 'center' });
@@ -213,11 +268,12 @@ async function submitSrc(form) {
   const f = S.files.find((x) => x.id === form.dataset.fid);
   if (!f) return;
   $('.file-err', form)?.classList.add('hidden');
-  const src = collectSources(form);
-  if (src.error) return toast(src.error);
   const btn = $('#btnSaveSrc'), label = btn.textContent;
-  btn.disabled = true;
+  btn.disabled = true; btn.textContent = '확인 중…';
+  const src = await collectSources(form);
+  if (src.error) { btn.disabled = false; btn.textContent = label; return showMsg(form, src.error); }
   if (Object.keys(src.up).length) btn.textContent = '업로드 중… (창을 닫지 마세요)';
+  else btn.textContent = label;
   try {
     await applyEdit(f, src.data, { ids: src.ids, up: src.up });
     await S.hooks.reload();
@@ -275,8 +331,11 @@ async function submitNew(form) {
   if (!(price >= 0 && price <= MAX_PRICE)) return toast(`가격은 0~${num(MAX_PRICE)} 사이로 적어줘`);
   const count = Math.floor(Number(el.count.value));
   if (!(count >= 1 && count <= 99)) return toast('문항 수는 1~99로 적어줘');
-  const src = collectSources(form);
-  if (src.error) return toast(src.error);
+  const btnC = $('#btnCreate'), labelC = btnC.textContent;
+  btnC.disabled = true; btnC.textContent = '확인 중…';
+  const src = await collectSources(form);
+  btnC.disabled = false; btnC.textContent = labelC;
+  if (src.error) return showMsg(form, src.error);
   const data = {
     title, subject: el.subject.value, unit: el.unit.value || '', level: Number(el.level.value) || 2, tier: tierOf(price),
     count, desc: el.desc.value.trim(), price, visible: el.visible.value === '1', ...src.data,

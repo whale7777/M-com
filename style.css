@@ -443,3 +443,13 @@ textarea.ed-in{width:100%;resize:vertical}
 .plan[data-planpick]{cursor:pointer;transition:.15s}.plan[data-planpick]:hover{transform:translateY(-2px)}
 .plan.pick{border:2px solid var(--brand);box-shadow:0 0 0 3px var(--brand-bg)}
 .step-h{font-size:1rem;margin:6px 0 10px}
+
+/* v10: 저장공간 탭 · JSON 업로드 입력 */
+.sbar{height:16px;border-radius:99px;background:var(--line,#e6e6ef);overflow:hidden;margin:6px 0}
+.sbar .fill{display:block;height:100%;background:#4caf7d;border-radius:99px;transition:width .4s}
+.sbar.warn .fill{background:#f0a23a}.sbar.bad .fill{background:#e5484d}
+.sbar-t{margin:4px 0 14px}
+.vt-admin{width:100%;border-collapse:collapse;font-size:.88rem;margin:6px 0 10px}
+.vt-admin th,.vt-admin td{padding:6px 8px;border-bottom:1px solid var(--line,#e6e6ef);text-align:left}
+.jl{display:block;font-size:.86rem;margin:6px 0}
+.jl input{display:block;margin-top:4px}

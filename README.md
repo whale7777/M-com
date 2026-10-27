@@ -151,3 +151,11 @@ PyNest 와 **같은 Supabase 프로젝트**를 쓰기 때문에, PyNest 의 ID·
 
 - 권한표를 바꾸려면 `staff_roles.sql` 의 `staff_can()` 과 `state.js` 의 `PERMS` 를 같이 고치세요.
 - `staff_roles.sql` 을 아직 안 돌렸어도 사이트는 예전처럼 동작해요 (직원 역할만 안 보여요).
+
+## v10 — 민혁 JSON(mhq/1) 자료 · PDF 서버 변환 · 💾 저장공간
+- 문제를 PDF 대신 **JSON + 그림 파일**로 올리면, 받을 때 변환 서버가 PDF로 만들어 줘요. 용량은 PDF의 약 1/10.
+- 설치: `schema_mhq.sql` 실행 → `render-server/` 배포 → `config.js` 의 `RENDER_URL` 입력. 자세한 순서는 `render-server/README.md`.
+- JSON 형식: `render-server/MHQ_FORMAT.md` (AI에게 문제를 만들게 하는 프롬프트도 들어 있어요)
+- 관리자 › 💾 저장공간: 사용량·남은 용량·**앞으로 올릴 수 있는 개수 예측**
+- 기존 PDF/드라이브 자료는 그대로 동작해요. `RENDER_URL` 이 비어 있으면 JSON 기능만 꺼져 있어요.
+- 사이트에 올릴 파일은 기존 파일 + 바뀐 `app.js admin.js backend.js editor.js util.js config.js index.html style.css` (`?v=17`).

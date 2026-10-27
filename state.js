@@ -1,4 +1,4 @@
-import { DAY } from './util.js?v=16';
+import { DAY } from './util.js?v=17';
 
 // 앱 전체가 같이 쓰는 상태. (여러 모듈이 같은 객체를 보기 때문에 한 곳에 모아뒀어요)
 export const S = {

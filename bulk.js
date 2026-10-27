@@ -1,7 +1,7 @@
 // 관리자 선택 관리: 자료 여러 개를 체크해서 한 번에 공개/숨김/고정/가격/폴더 이동/삭제
-import { $, $$, esc, num, toast } from './util.js?v=16';
-import { S, flatUnits } from './state.js?v=16';
-import { applyEdit, MAX_PRICE } from './editor.js?v=16';
+import { $, $$, esc, num, toast } from './util.js?v=17';
+import { S, flatUnits } from './state.js?v=17';
+import { applyEdit, MAX_PRICE } from './editor.js?v=17';
 
 export const B = { on: false, sel: new Set(), hash: '' };
 

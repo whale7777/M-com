@@ -1,11 +1,11 @@
-import { CONFIG } from './config.js?v=16';
-import { $, $$, esc, clone, safeColor, safeLink, num, fmtDT, fmtDate, richText, ID_RE, toast, triggerDownload, DAY, PYNEST_URL } from './util.js?v=16';
-import { DEFAULT_TAX, DEFAULT_SITE, DEFAULT_MENU, DEFAULT_PLANS, DEFAULT_BANNERS } from './defaults.js?v=16';
-import { demoBackend, supabaseBackend } from './backend.js?v=16';
-import { S, subj, unitOf, findUnit, unitPath, unitIds, flatUnits, created, isNew, visibleFiles, unlocked, canMain, canSol, buyable, claimable, hasPreview, can, roleBadge } from './state.js?v=16';
-import { bindAdmin, openAdmin, adminClick } from './admin.js?v=16';
-import { B, barHTML, syncSel, bulkClick, bindBulk } from './bulk.js?v=16';
-import { pencil, startEdit, cancelEdit, commitEdit, newPageHTML, afterNewPage, filePanelHTML, openFilePanel, bindEditor } from './editor.js?v=16';
+import { CONFIG } from './config.js?v=17';
+import { $, $$, esc, clone, safeColor, safeLink, num, fmtDT, fmtDate, richText, ID_RE, toast, triggerDownload, DAY, PYNEST_URL } from './util.js?v=17';
+import { DEFAULT_TAX, DEFAULT_SITE, DEFAULT_MENU, DEFAULT_PLANS, DEFAULT_BANNERS } from './defaults.js?v=17';
+import { demoBackend, supabaseBackend } from './backend.js?v=17';
+import { S, subj, unitOf, findUnit, unitPath, unitIds, flatUnits, created, isNew, visibleFiles, unlocked, canMain, canSol, buyable, claimable, hasPreview, can, roleBadge } from './state.js?v=17';
+import { bindAdmin, openAdmin, adminClick } from './admin.js?v=17';
+import { B, barHTML, syncSel, bulkClick, bindBulk } from './bulk.js?v=17';
+import { pencil, startEdit, cancelEdit, commitEdit, newPageHTML, afterNewPage, filePanelHTML, openFilePanel, bindEditor } from './editor.js?v=17';
 
 S.DEMO = !CONFIG.SUPABASE_URL || /여기에/.test(CONFIG.SUPABASE_URL) || new URLSearchParams(location.search).has('demo');
 const demoFlags = {};
@@ -665,15 +665,21 @@ async function download(id, kind) {
   const f = S.files.find((x) => x.id === id);
   if (!f) return;
   if (kind === 'solution' ? !canSol(f) : !canMain(f)) return toast('이 자료는 구매하거나 M패스로 받아야 다운로드할 수 있어요');
+  const isJson = (kind === 'solution' ? f.solutionSrc : f.mainSrc) === 'json';
   try {
+    if (isJson && !S.DEMO) toast('PDF 만드는 중… 📄 (처음엔 몇 초 걸려요)');
     const url = await S.api.getLink(f, kind);
     if (S.DEMO) toast('데모 모드라 실제 파일은 없어! 설정하면 바로 다운로드돼');
-    else { triggerDownload(url); toast('다운로드 시작! 📥'); }
+    else {
+      const nm = `${String(f.title).replace(/[\\/:*?"<>|\r\n]+/g, ' ').trim().slice(0, 80) || 'file'}${kind === 'solution' ? ' 해설' : ''}.pdf`;
+      triggerDownload(url, url.startsWith('blob:') ? nm : '');
+      toast('다운로드 시작! 📥');
+    }
     if (kind === 'main') {
       f.downloads = (f.downloads || 0) + 1;
       S.api.countDownload(f.id);
     }
-  } catch (err) { console.error(err); toast('권한이 없거나 오류가 났어'); }
+  } catch (err) { console.error(err); toast(isJson && err?.message ? String(err.message).split('\n')[0].slice(0, 80) : '권한이 없거나 오류가 났어'); }
 }
 
 async function adminQuick(act, id) {

@@ -1,0 +1,244 @@
+/* ===== 민혁닷컴 문제지 스타일 (A4 / 2단 / 오렌지 포인트) ===== */
+@page { size: A4; margin: 0; }
+
+:root {
+  --orange: #E8845A;
+  --peach: #FDEFE4;
+  --peach-line: #F4C6A3;
+  --gray: #888;
+  --ink: #111;
+  --mx: 16mm;                 /* 좌우 여백 */
+  --gap: 12mm;                /* 단 사이 간격 */
+  --colw: calc((210mm - 2 * var(--mx) - var(--gap)) / 2);
+  --blk-gap: 10mm;            /* 문항 사이 간격 */
+}
+
+html, body { margin: 0; padding: 0; background: #fff; }
+body {
+  font-family: __FONT_STACK__;
+  font-size: 9.5pt;
+  line-height: 1.5;
+  color: var(--ink);
+  -webkit-print-color-adjust: exact;
+  print-color-adjust: exact;
+  word-break: keep-all;
+  overflow-wrap: break-word;
+}
+b, strong { font-weight: 700; }
+.nb { white-space: nowrap; }
+u { text-underline-offset: 1.2pt; }
+
+/* ---------- 페이지 뼈대 ---------- */
+.page {
+  position: relative;
+  width: 210mm;
+  height: 296.6mm;
+  overflow: hidden;
+  background: #fff;
+  break-after: page;
+  page-break-after: always;
+}
+#pages > .page:last-child { break-after: auto; page-break-after: auto; }
+
+.page .body {
+  position: absolute;
+  left: var(--mx);
+  right: var(--mx);
+  bottom: 23mm;
+}
+.page.first .body { top: 41mm; }
+.page .body.has-credit .vline { bottom: 8mm; }
+.page.cont  .body { top: 30mm; }
+
+.col { position: absolute; top: 0; bottom: 0; width: var(--colw); }
+.col.c0 { left: 0; }
+.col.c1 { right: 0; }
+.vline { position: absolute; left: 50%; top: 0; bottom: 0; border-left: 0.5pt solid #666; }
+
+/* 측정용 보관소 (화면 밖) */
+#pool { position: absolute; left: 0; top: 0; width: var(--colw); visibility: hidden; }
+
+.blk { margin-bottom: var(--blk-gap); }
+
+/* ---------- 첫 페이지 머리글 ---------- */
+.hdr-first {
+  position: absolute; left: var(--mx); right: var(--mx); top: 11mm; height: 31mm;
+}
+.hdr-first .row1 { position: absolute; left: 0; top: 0; height: 8mm; display: flex; align-items: center; gap: 2.2mm; }
+.hdr-first .lbl {
+  height: 8mm; line-height: 8mm; padding: 0 4.2mm; box-sizing: border-box;
+  background: var(--orange); color: #fff; font-weight: 700; font-size: 10.5pt;
+  border-radius: 2.4mm; white-space: nowrap;
+}
+.hdr-first .bar { width: 12mm; height: 2.2mm; background: var(--orange); border-radius: 1mm; }
+.hdr-first .bent {
+  position: absolute; left: 4mm; top: 8mm; width: 6.5mm; height: 7.8mm; box-sizing: border-box;
+  border-left: 1.6pt solid var(--orange); border-bottom: 1.6pt solid var(--orange);
+}
+.hdr-first .subj {
+  position: absolute; left: 10.5mm; top: 11.5mm; height: 8.6mm; line-height: 8.6mm; box-sizing: border-box;
+  padding: 0 4.8mm; border: 1.4pt solid var(--orange); border-radius: 2.6mm; background: #fff;
+  font-weight: 700; font-size: 12pt; white-space: nowrap;
+}
+.hdr-first .ctr { position: absolute; left: 50mm; right: 50mm; top: 2mm; text-align: center; }
+.hdr-first .maj { font-weight: 700; font-size: 9.5pt; }
+.hdr-first .thin { border-top: 0.7pt solid var(--peach-line); margin: 1.6mm 4mm 1.8mm; }
+.hdr-first .min { font-weight: 700; font-size: 15pt; line-height: 1.3; }
+.hdr-first .rt { position: absolute; right: 0; top: 0; width: 46mm; height: 8mm; display: flex; justify-content: flex-end; align-items: center; }
+.hdr-first .endline { position: absolute; right: 0; top: 12.6mm; width: 46mm; border-top: 1.6pt solid var(--orange); }
+.hdr-first .endline::after {
+  content: ""; position: absolute; right: 0; top: -1.7mm; width: 3.2mm; height: 3.2mm;
+  border-radius: 50%; background: var(--orange);
+}
+
+/* ---------- 이후 페이지 머리글 ---------- */
+.hdr-cont { position: absolute; left: var(--mx); right: var(--mx); top: 11mm; }
+.hdr-cont .t { text-align: right; font-size: 7.8pt; color: #333; padding-bottom: 1.6mm; line-height: 1.3; }
+.hdr-cont .rule { border-top: 2.2pt solid var(--orange); }
+
+/* ---------- 바닥글 ---------- */
+.ftr { position: absolute; left: var(--mx); right: var(--mx); bottom: 9mm; height: 11mm; }
+.ftr .rule { border-top: 1.4pt solid var(--orange); }
+.ftr .row { display: flex; justify-content: space-between; align-items: center; margin-top: 2mm; }
+.ftr .right { display: flex; align-items: baseline; gap: 4mm; }
+.ftr .code { font-size: 6.5pt; color: var(--gray); letter-spacing: .02em; }
+.ftr .pn { font-weight: 700; font-size: 10.5pt; }
+
+/* ---------- 로고 (텍스트 로고 / 이미지 로고) ---------- */
+.logo { display: inline-flex; align-items: center; gap: 1.8mm; font-weight: 700; font-size: 10.5pt; line-height: 1; white-space: nowrap; }
+.logo .mark {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 5.6mm; height: 5.6mm; border-radius: 50%; background: var(--orange); color: #fff; font-size: 8pt;
+}
+.logo .nm em { font-style: normal; color: var(--orange); }
+.logo img { height: 7mm; width: auto; display: block; }
+.ftr .logo { font-size: 9.5pt; color: #222; }
+.ftr .logo img { height: 5.4mm; }
+
+/* ---------- 빈출유형 TOP 3 ---------- */
+.top3 { position: relative; background: var(--peach); padding: 3.4mm 3.8mm 3.6mm; }
+.top3 .head { display: flex; align-items: center; gap: 2.6mm; margin-bottom: 2.2mm; }
+.top3 .tag {
+  display: inline-flex; align-items: center; gap: 1.2mm; background: #3a3a3a; color: #fff;
+  font-weight: 700; font-size: 8.4pt; line-height: 1; padding: 1mm 2.2mm 1mm 1.6mm; border-radius: 1mm;
+}
+.top3 .tag svg { display: block; }
+.top3 .t3 { font-weight: 700; font-size: 14pt; color: var(--orange); letter-spacing: .02em; line-height: 1.1; }
+.top3 ul { list-style: none; margin: 0; padding: 0; }
+.top3 li { display: flex; gap: 1.8mm; font-size: 8.6pt; line-height: 1.45; margin-top: 1.3mm; }
+.top3 li svg { flex: none; width: 3.4mm; height: 3.4mm; margin-top: .9mm; }
+
+/* ---------- 문항 ---------- */
+.q { position: relative; --qno: 10.7mm; }
+.q-head { display: flex; gap: 2mm; align-items: flex-start; }
+.q-no { flex: none; width: 8.7mm; font-weight: 700; font-size: 13pt; line-height: 1.25; }
+.q-stem { flex: 1; font-weight: 700; }
+.q-stem .pt { white-space: nowrap; }
+.indent { margin-left: var(--qno); }
+.tag-type {
+  display: inline-block; border: 0.8pt solid var(--orange); color: var(--orange); background: #fff;
+  font-size: 7.6pt; line-height: 1; padding: .9mm 2.6mm; border-radius: 99px; margin-bottom: 1.8mm;
+}
+.q.freq .q-stem { padding-right: 15mm; }
+.neg { font-weight: 700; text-decoration: underline; text-underline-offset: 1.4pt; text-decoration-thickness: 0.9pt; }
+
+.badge {
+  position: absolute; right: 0; top: -0.6mm; display: flex; align-items: center; gap: .8mm;
+  background: var(--orange); color: #fff; font-weight: 700; font-size: 7.6pt; line-height: 1;
+  padding: .7mm 2.6mm .7mm 1.4mm; border-radius: 99px;
+}
+.badge svg { width: 2.6mm; height: 3.3mm; }
+
+.box { border: 0.6pt solid #000; padding: 3mm 3.2mm; margin-top: 2.6mm; position: relative; background: #fff; }
+.box.passage p { margin: 0; text-indent: 1em; }
+.box.passage .src { text-align: right; font-size: 7.6pt; color: #444; margin-top: 1mm; }
+.box.bogi { padding-top: 3.8mm; }
+.box.bogi .cap {
+  position: absolute; top: -2.7mm; left: 50%; transform: translateX(-50%);
+  background: #fff; padding: 0 2mm; font-weight: 700; font-size: 9pt; line-height: 1.2; white-space: nowrap;
+}
+
+.hang { display: flex; gap: .45em; }
+.hang .mk { flex: none; min-width: 1.35em; }
+.hang .mk.pm { min-width: 2.15em; }
+.hang .tx { flex: 1; }
+.parts { margin-top: 2.2mm; }
+.parts .hang + .hang, .parts .plain + .hang { margin-top: 1.5mm; }
+
+/* 수식 */
+.katex { font-size: 1.04em; }
+.mathd { display: block; text-align: center; margin: 1mm 0; }
+
+/* 개념 박스 (쉽게 이해하기) */
+.concept {
+  margin-top: 2.6mm; padding: 2.4mm 3mm 2.6mm; background: var(--peach);
+  border-left: 1.2mm solid var(--orange); font-size: 8.8pt; line-height: 1.55;
+}
+.concept .ct { font-weight: 700; color: var(--orange); font-size: 8.6pt; margin-bottom: .6mm; }
+.concept p { margin: 0; }
+.concept p + p { margin-top: 1mm; }
+.box.passage.titled p { text-indent: 0; }
+.box.passage .ptitle { text-align: center; font-weight: 700; margin-bottom: 1.4mm; }
+
+.choices { margin-top: 2.6mm; }
+.ch { display: flex; gap: .4em; }
+.ch .mk { flex: none; }
+.ch .tx { flex: 1; }
+.choices.grid { display: grid; grid-template-columns: 1fr 1fr; column-gap: 3mm; row-gap: .8mm; }
+.choices.list .ch + .ch { margin-top: .5mm; }
+
+.alines { margin-top: 3mm; }
+.al { height: 7.2mm; border-bottom: 0.5pt dotted #777; position: relative; }
+.al .lab { position: absolute; left: 0; bottom: .8mm; font-weight: 700; font-size: 8.4pt; color: var(--orange); }
+
+/* ---------- 시각자료 (흑백 선화 느낌) ---------- */
+.visual { border: 0.6pt solid #000; padding: 2.6mm; margin-top: 2.6mm; background: #fff; }
+.visual img { max-width: 100%; display: block; margin: 0 auto; filter: grayscale(1) contrast(1.05); }
+.visual svg { max-width: 100%; height: auto; display: block; margin: 0 auto; }
+.vt.plain1 td:first-child { font-weight: 400; background: #fff; }
+.visual .vcap { text-align: center; font-size: 7.6pt; color: #444; margin-top: 1.4mm; }
+
+.dlg { display: flex; flex-direction: column; gap: 2.6mm; }
+.dlg .row { display: flex; align-items: flex-start; gap: 2.6mm; }
+.dlg .row.r { flex-direction: row-reverse; }
+.dlg .av { flex: none; width: 11mm; text-align: center; }
+.dlg .av svg { width: 8.4mm; height: 8.4mm; display: block; margin: 0 auto; }
+.dlg .who { font-size: 6.6pt; line-height: 1.2; margin-top: .4mm; white-space: nowrap; }
+.dlg .bub {
+  position: relative; border: 0.6pt solid #000; border-radius: 3mm; padding: 1.7mm 2.6mm;
+  max-width: calc(100% - 17mm); background: #fff; font-size: 8.8pt; line-height: 1.5; margin-top: .6mm;
+}
+.dlg .bub::before {
+  content: ""; position: absolute; top: 2.6mm; width: 2.6mm; height: 2.6mm; background: #fff; box-sizing: border-box;
+}
+.dlg .row.l .bub::before { left: -1.5mm; border-left: 0.6pt solid #000; border-bottom: 0.6pt solid #000; transform: rotate(45deg); }
+.dlg .row.r .bub::before { right: -1.5mm; border-right: 0.6pt solid #000; border-top: 0.6pt solid #000; transform: rotate(45deg); }
+
+.vt { width: 100%; border-collapse: collapse; font-size: 8.5pt; line-height: 1.45; }
+.vt th, .vt td { border: 0.5pt solid #000; padding: 1.3mm 1.9mm; vertical-align: middle; }
+.vt th { background: var(--peach); font-weight: 700; text-align: center; }
+.vt td:first-child { text-align: center; font-weight: 700; white-space: nowrap; width: 17%; background: #f7f7f7; }
+
+.news .paper { text-align: center; font-weight: 700; font-size: 12.5pt; letter-spacing: .4em; padding-left: .4em; border-bottom: 2.2pt double #000; padding-bottom: 1mm; }
+.news .meta { display: flex; justify-content: space-between; font-size: 7pt; border-bottom: 0.5pt solid #000; padding: .6mm 0; }
+.news .hl { font-weight: 700; font-size: 10.6pt; margin: 2mm 0 1.2mm; line-height: 1.35; }
+.news .tx { font-size: 8.5pt; line-height: 1.5; text-align: justify; }
+
+/* ---------- 정답 및 해설 ---------- */
+.ans-pill {
+  display: block; width: 62%; background: var(--orange); color: #fff; font-weight: 700; text-align: center;
+  border-radius: 99px; padding: 1.3mm 0; font-size: 10.8pt; line-height: 1.4; margin-bottom: 5.5mm;
+}
+.ans { margin-bottom: 5.2mm; font-size: 8.8pt; line-height: 1.5; }
+.ans .a-line { display: flex; gap: .4em; }
+.ans .a-line .no, .ans .a-line .tag { flex: none; }
+.ans .a-line .val { flex: 1; }
+.ans .a-line .val.strong { font-weight: 700; }
+.ans .a-exp { display: flex; gap: .4em; margin-top: .6mm; }
+.ans .a-exp .tag { flex: none; }
+.ans .a-exp .xb { flex: 1; }
+.ans .a-tip { margin-top: .8mm; color: #9a4a25; }
+.ans .a-rub { margin-top: .8mm; font-size: 7.6pt; color: var(--gray); }
+.ans .a-exp .xb .hang + .hang, .ans .a-exp .xb .plain + .hang, .ans .a-exp .xb .hang + .plain, .ans .a-exp .xb .plain + .plain { margin-top: .5mm; }
+
+.credit { position: absolute; left: 0; right: 0; bottom: 0; text-align: center; font-size: 6.5pt; color: var(--gray); line-height: 1.4; }

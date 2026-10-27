@@ -8,7 +8,7 @@
 <meta name="description" content="물리·화학·생물·지구과학 엄선 문제 PDF">
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.min.css">
 <style>.drawer{position:fixed;top:0;bottom:0;left:0;width:300px;max-width:84vw;transform:translateX(-102%);visibility:hidden;background:#fff;z-index:100}.drawer.open{transform:none;visibility:visible}.drawer-bg{position:fixed;inset:0;visibility:hidden;z-index:90}.drawer-bg.open{visibility:visible}</style>
-<link rel="stylesheet" href="style.css?v=16">
+<link rel="stylesheet" href="style.css?v=17">
 </head>
 <body>
 <div id="notice" class="notice hidden"></div>
@@ -113,6 +113,7 @@
     <button class="tab" data-tab="tabPass" data-perm="pass" type="button">M패스</button>
     <button class="tab" data-tab="tabBanner" data-perm="@admin" type="button">홈 배너</button>
     <button class="tab" data-tab="tabMenu" data-perm="@admin" type="button">메뉴</button>
+    <button class="tab" data-tab="tabStorage" data-perm="@admin" type="button">💾 저장공간</button>
     <button class="tab" data-tab="tabSite" data-perm="@admin" type="button">사이트 설정</button>
     <button class="tab" data-tab="tabStaff" data-perm="roles_basic" type="button">👥 권한</button>
   </div>
@@ -225,6 +226,8 @@
     <div id="staffList" class="list"></div>
   </div>
 
+  <div id="tabStorage" class="tabpane hidden"><div id="storageBox"><p class="note">불러오는 중…</p></div></div>
+
   <div id="tabSite" class="tabpane hidden">
     <form id="formSite" class="form card-form">
       <label class="check"><input type="checkbox" name="autoApprove"> 민혁닷컴에서 가입한 사람은 PyNest 도 바로 사용 가능 (PyNest 자동 승인) — ⚠️ 끄면 PyNest 는 선생님이 승인해야 해요</label>
@@ -248,6 +251,6 @@
 </dialog>
 
 <div id="toast" class="toast"></div>
-<script type="module" src="app.js?v=16"></script>
+<script type="module" src="app.js?v=17"></script>
 </body>
 </html>

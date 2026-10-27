@@ -1,5 +1,5 @@
-import { DAY, clone, fmtDate, driveDownloadUrl, drivePreviewUrl } from './util.js?v=16';
-import { DEFAULT_TAX, DEFAULT_SITE, buildPrem } from './defaults.js?v=16';
+import { DAY, clone, fmtDate, driveDownloadUrl, drivePreviewUrl, RENDER_URL, STORAGE_QUOTA_MB } from './util.js?v=17';
+import { DEFAULT_TAX, DEFAULT_SITE, buildPrem } from './defaults.js?v=17';
 
 const must = ({ data, error }) => { if (error) throw error; return data; };
 
@@ -144,14 +144,26 @@ export function demoBackend(flags = {}) {
       return 'ok';
     },
     getLink: async (f, kind) => 'DEMO:' + kind,
+    validateMhq: async (json, assets = []) => {
+      const need = [...new Set((json.questions || []).map((q) => q.visual?.asset).filter(Boolean))];
+      const errors = need.filter((n) => !assets.includes(n)).map((n) => `올리지 않은 이미지가 있어요: ${n}`);
+      return { ok: !errors.length, errors, warnings: [], questions: (json.questions || []).length, assets: need };
+    },
+    listImgs: async () => [],
+    storageStats: async () => ({
+      quotaBytes: STORAGE_QUOTA_MB * 1048576, total_bytes: 9.6 * 1048576, object_count: 61, set_count: 18, db_bytes: 14 * 1048576,
+      by_kind: { pdf: 9.3 * 1048576, json: 0.2 * 1048576, img: 0.1 * 1048576 }, avg_json: 70 * 1024, avg_pdf: 620 * 1024, json_sets: 3, pdf_sets: 15,
+      recent: [0, 1, 2, 3, 4].map((i) => ({ file_id: 'x' + i, title: `데모 자료 ${i + 1}`, bytes: i % 2 ? 640 * 1024 : 70 * 1024, at: new Date(Date.now() - i * DAY).toISOString(), json: i % 2 === 0, objects: 4 })),
+      render: null,
+    }),
     addFile: async (f, ids) => {
       const id = 'd' + Date.now();
-      files.unshift({ ...f, id, downloads: 0, pinned: false, createdAt: Date.now(), driveId: f.tier === 'free' && f.mainSrc !== 'upload' ? ids.main : undefined });
+      files.unshift({ ...f, id, downloads: 0, pinned: false, createdAt: Date.now(), driveId: f.tier === 'free' && (f.mainSrc || 'drive') === 'drive' ? ids.main : undefined });
       prem[id] = buildPrem(f.tier, ids);
       return id;
     },
     updateFile: async (id, f, ids) => {
-      Object.assign(find(id), f, { driveId: f.tier === 'free' && f.mainSrc !== 'upload' ? ids.main : undefined });
+      Object.assign(find(id), f, { driveId: f.tier === 'free' && (f.mainSrc || 'drive') === 'drive' ? ids.main : undefined });
       prem[id] = buildPrem(f.tier, ids);
     },
     listNotices: async (admin) => clone(notices.filter((n) => admin || n.visible)),
@@ -241,9 +253,43 @@ export function supabaseBackend(sb) {
     for (const k of KINDS) {
       if (up[k]) must(await sb.storage.from(BUCKET).upload(objPath(id, k), up[k], { upsert, contentType: 'application/pdf', cacheControl: '3600' }));
     }
+    if (up.mainJson) must(await sb.storage.from(BUCKET).upload(`${id}/main.json`, up.mainJson, { upsert: true, contentType: 'application/json', cacheControl: '0' }));
+    for (const im of up.images || []) {
+      must(await sb.storage.from(BUCKET).upload(imgPath(id, im.name), im.blob, { upsert: true, contentType: im.type, cacheControl: '3600' }));
+    }
   };
   const removeObjects = async (id, kinds = KINDS) => { try { await sb.storage.from(BUCKET).remove(kinds.map((k) => objPath(id, k))); } catch { /* 없어도 괜찮아요 */ } };
   const nz = (x) => (x ? x : null);
+
+  // ---- v10: JSON(mhq/1) 자료 ----
+  const imgPath = (id, name) => `${id}/img/${name}`;
+  const listImgs = async (id) => {
+    const { data, error } = await sb.storage.from(BUCKET).list(`${id}/img`, { limit: 200 });
+    if (error) return [];
+    return (data || []).filter((o) => o.name && !o.name.startsWith('.')).map((o) => o.name);
+  };
+  const removeJson = async (id) => {
+    try {
+      const names = await listImgs(id);
+      await sb.storage.from(BUCKET).remove([`${id}/main.json`, ...names.map((n) => imgPath(id, n))]);
+    } catch { /* 없어도 괜찮아요 */ }
+  };
+  const authHeader = async () => {
+    const { data } = await sb.auth.getSession();
+    return data?.session?.access_token ? { Authorization: `Bearer ${data.session.access_token}` } : {};
+  };
+  const renderFetch = async (path, opt = {}) => {
+    if (!RENDER_URL) throw new Error('PDF 변환 서버 주소(RENDER_URL)가 설정되지 않았어요.');
+    let res;
+    try { res = await fetch(RENDER_URL + path, { ...opt, headers: { ...(opt.headers || {}), ...(await authHeader()) } }); }
+    catch { throw new Error('PDF 변환 서버에 연결하지 못했어요. 잠시 뒤 다시 눌러줘. (서버가 잠들어 있으면 처음엔 1분쯤 걸려요)'); }
+    if (!res.ok) {
+      let m = '';
+      try { const j = await res.json(); m = j.error + (j.details ? '\n' + j.details.join('\n') : ''); } catch { /* 본문 없음 */ }
+      throw new Error(m || `변환 서버 오류 (${res.status})`);
+    }
+    return res;
+  };
 
   return {
     onAuth: (cb) => {
@@ -311,6 +357,12 @@ export function supabaseBackend(sb) {
     // 받기/미리보기용 주소. 업로드 파일은 권한이 있을 때만 서버가 임시 주소(2분)를 만들어줘요.
     getLink: async (f, kind) => {
       const src = kind === 'solution' ? f.solutionSrc : kind === 'preview' ? f.previewSrc : f.mainSrc;
+      if (src === 'json' && kind !== 'preview') {
+        const res = await renderFetch(`/pdf/${f.id}?kind=${kind}`);
+        const url = URL.createObjectURL(await res.blob());
+        setTimeout(() => URL.revokeObjectURL(url), 120000);
+        return url;
+      }
       if (src === 'upload') {
         const opt = kind === 'preview' ? undefined : { download: safeName(f.title, kind) };
         const { data, error } = await sb.storage.from(BUCKET).createSignedUrl(objPath(f.id, kind), 120, opt);
@@ -326,6 +378,15 @@ export function supabaseBackend(sb) {
       if (!id) throw new Error('파일 ID 없음');
       return driveDownloadUrl(id);
     },
+    // v10: 변환 서버로 JSON 검사 / 올라간 이미지 목록 / 저장공간 현황
+    validateMhq: async (json, assets) => (await renderFetch('/validate', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ json, assets }) })).json(),
+    listImgs,
+    storageStats: async () => {
+      const st = must(await sb.rpc('mh_storage_stats', { p_recent: 10 }));
+      let render = null;
+      if (RENDER_URL) { try { render = (await (await renderFetch('/stats')).json()).cache; } catch { /* 서버가 꺼져 있어도 괜찮아요 */ } }
+      return { ...st, quotaBytes: STORAGE_QUOTA_MB * 1048576, render };
+    },
     buyFile: (id) => rpc('mh_buy_file', { p_file: id }),
     myLedger: async (u) => must(await sb.from('mh_ledger').select('*').eq('user_id', u.id).order('created_at', { ascending: false }).limit(100)).map(ledgerFrom),
     myCharges: async (u) => must(await sb.from('mh_charges').select('*').eq('user_id', u.id).order('created_at', { ascending: false }).limit(30)).map(chargeFrom),
@@ -334,20 +395,21 @@ export function supabaseBackend(sb) {
     requestPass: (planId, depositor) => rpc('mh_request_pass', { p_plan: planId, p_depositor: depositor || '' }),
     requestCharge: (amount, depositor) => rpc('mh_request_charge', { p_amount: amount, p_depositor: depositor || '' }),
     addFile: async (f, ids, up = {}) => {
-      const { id } = must(await sb.from('mh_files').insert({ ...toRow(f), drive_id: f.tier === 'free' && f.mainSrc !== 'upload' ? nz(ids.main) : null }).select('id').single());
+      const { id } = must(await sb.from('mh_files').insert({ ...toRow(f), drive_id: f.tier === 'free' && (f.mainSrc || 'drive') === 'drive' ? nz(ids.main) : null }).select('id').single());
       try {
         await uploadAll(id, up, false);
         const prem = buildPrem(f.tier, ids);
         if (Object.keys(prem).length) must(await sb.from('mh_premium').insert(premRow(id, prem)));
       } catch (err) { // 중간에 실패하면 반쯤 만들어진 자료를 지워요
         await removeObjects(id);
+        await removeJson(id);
         await sb.from('mh_files').delete().eq('id', id);
         throw err;
       }
       return id;
     },
     updateFile: async (id, f, ids, up = {}) => {
-      must(await sb.from('mh_files').update({ ...toRow(f), drive_id: f.tier === 'free' && f.mainSrc !== 'upload' ? nz(ids.main) : null, updated_at: new Date().toISOString() }).eq('id', id));
+      must(await sb.from('mh_files').update({ ...toRow(f), drive_id: f.tier === 'free' && (f.mainSrc || 'drive') === 'drive' ? nz(ids.main) : null, updated_at: new Date().toISOString() }).eq('id', id));
       await uploadAll(id, up);
       const prem = buildPrem(f.tier, ids);
       if (Object.keys(prem).length) must(await sb.from('mh_premium').upsert(premRow(id, prem)));
@@ -355,12 +417,13 @@ export function supabaseBackend(sb) {
       // 드라이브 방식으로 바꾼 항목의 예전 업로드 파일 정리
       const old = [];
       if (f.mainSrc !== 'upload') old.push('main');
+      if (f.mainSrc !== 'json') await removeJson(id);
       if (f.solutionSrc !== 'upload' || !f.hasSolution) old.push('solution');
       if (f.previewSrc !== 'upload') old.push('preview');
       if (old.length) await removeObjects(id, old);
     },
     patchFile: async (id, patch) => { must(await sb.from('mh_files').update(patch).eq('id', id)); },
-    deleteFile: async (id) => { await removeObjects(id); must(await sb.from('mh_files').delete().eq('id', id)); },
+    deleteFile: async (id) => { await removeObjects(id); await removeJson(id); must(await sb.from('mh_files').delete().eq('id', id)); },
 
     listNotices: async () => must(await sb.from('mh_notices').select('*').order('created_at', { ascending: false })).map(noticeFrom),
     addNotice: async (n, author) => { must(await sb.from('mh_notices').insert({ title: n.title, body: n.body, pinned: !!n.pinned, visible: n.visible !== false, author: author || '' })); },

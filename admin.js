@@ -1,6 +1,6 @@
-import { $, $$, esc, clone, uid, safeColor, fmtDate, fmtDT, num, ID_RE, toast, extractDriveId, saveBlob, move, DAY, MAX_UPLOAD_MB, fmtSize } from './util.js?v=16';
-import { S, subj, unitOf, created, flatUnits, unitIds, can, ROLES } from './state.js?v=16';
-import { DEFAULT_MENU } from './defaults.js?v=16';
+import { $, $$, esc, clone, uid, safeColor, fmtDate, fmtDT, num, ID_RE, toast, extractDriveId, saveBlob, move, DAY, MAX_UPLOAD_MB, fmtSize, STORAGE_QUOTA_MB, RENDER_URL } from './util.js?v=17';
+import { S, subj, unitOf, created, flatUnits, unitIds, can, ROLES } from './state.js?v=17';
+import { DEFAULT_MENU } from './defaults.js?v=17';
 
 let editId = null, taxDraft = null, taxDirty = false, bannerDraft = null, bannerDirty = false, menuDraft = null, menuDirty = false;
 let passCache = [], pointsCache = [], chargesCache = [], ledgerCache = [];
@@ -51,6 +51,7 @@ function switchTab(id) {
   if (id === 'tabPass') refreshPass().then(renderAdminPass);
   if (id === 'tabPoints') refreshPoints().then(renderAdminPoints);
   if (id === 'tabStaff') refreshStaff().then(renderStaff);
+  if (id === 'tabStorage') renderStorage();
 }
 
 /* ---- 대시보드 ---- */
@@ -615,4 +616,47 @@ export async function adminClick(e, t) {
     await S.api.removePass(d.prm); await refreshPass(); renderAdminPass(); toast('회수했어'); return true;
   }
   return false;
+}
+
+
+/* ---- 💾 저장공간 (남은 용량 + 앞으로 올릴 수 있는 자료 수 예측) ---- */
+const fmtBytes = (b) => (b >= 1073741824 ? (b / 1073741824).toFixed(2) + ' GB' : b >= 1048576 ? (b / 1048576).toFixed(1) + ' MB' : Math.max(0, Math.round(b / 1024)) + ' KB');
+async function renderStorage() {
+  const box = $('#storageBox');
+  box.innerHTML = '<p class="note">불러오는 중…</p>';
+  let st;
+  try { st = await S.api.storageStats(); }
+  catch (e) {
+    console.error(e);
+    box.innerHTML = '<p class="file-err">저장공간 정보를 못 불러왔어요.\nschema_mhq.sql 을 SQL Editor 에서 실행했는지, 관리자 계정인지 확인해줘.</p>';
+    return;
+  }
+  const quota = st.quotaBytes || STORAGE_QUOTA_MB * 1048576;
+  const used = Number(st.total_bytes) || 0;
+  const left = Math.max(0, quota - used);
+  const pct = Math.min(100, Math.round(used / quota * 100));
+  const recent = (st.recent || []);
+  const avgRecent = recent.length ? recent.reduce((n, r) => n + Number(r.bytes), 0) / recent.length : 0;
+  const more = avgRecent > 0 ? Math.floor(left / avgRecent) : null;
+  const aJ = Number(st.avg_json) || 0, aP = Number(st.avg_pdf) || 0;
+  const moreJ = aJ > 0 ? Math.floor(left / aJ) : null, moreP = aP > 0 ? Math.floor(left / aP) : null;
+  const k = st.by_kind || {};
+  const level = pct >= 90 ? 'bad' : pct >= 70 ? 'warn' : 'ok';
+  box.innerHTML = `
+    <div class="sbar ${level}"><span class="fill" style="width:${pct}%"></span></div>
+    <p class="sbar-t"><b>${fmtBytes(used)}</b> 사용 / ${fmtBytes(quota)} 중 (${pct}%) · 남은 용량 <b>${fmtBytes(left)}</b></p>
+    <div class="kpis">
+      <div class="kpi"><b>${more === null ? '—' : '약 ' + num(more) + '개'}</b><span>최근 ${recent.length}개 평균(${fmtBytes(avgRecent)}) 기준<br>더 올릴 수 있는 자료 수</span></div>
+      <div class="kpi"><b>${num(st.set_count || 0)}</b><span>자료 폴더 · 파일 ${num(st.object_count || 0)}개</span></div>
+      <div class="kpi"><b>${fmtBytes(Number(k.pdf) || 0)}</b><span>PDF 업로드 (${num(st.pdf_sets || 0)}개 자료)</span></div>
+      <div class="kpi"><b>${fmtBytes((Number(k.json) || 0) + (Number(k.img) || 0))}</b><span>JSON + 이미지 (${num(st.json_sets || 0)}개 자료)</span></div>
+    </div>
+    ${aJ && aP ? `<div class="alert-box">📐 자료 1개당 평균: <b>JSON 방식 ${fmtBytes(aJ)}</b> vs <b>PDF 방식 ${fmtBytes(aP)}</b> → JSON 이 약 <b>${(aP / aJ).toFixed(0)}배</b> 가벼워요.
+      남은 용량으로 JSON 방식이면 약 <b>${num(moreJ)}개</b>, PDF 방식이면 약 <b>${num(moreP)}개</b>.</div>`
+      : `<p class="note">JSON 자료와 PDF 자료가 둘 다 생기면 방식별 평균 용량과 예상 개수를 비교해서 보여줘요.</p>`}
+    <h4>🕒 최근 올린 자료 (용량 예측에 쓰는 표본)</h4>
+    <table class="vt-admin"><thead><tr><th>자료</th><th>방식</th><th>용량</th><th>올린 날</th></tr></thead><tbody>${recent.map((r) => `
+      <tr><td>${esc(r.title || '(삭제된 자료)')}</td><td>${r.json ? 'JSON' : 'PDF'}</td><td>${fmtBytes(Number(r.bytes))}</td><td>${fmtDT(r.at)}</td></tr>`).join('') || '<tr><td colspan="4">아직 업로드한 자료가 없어요.</td></tr>'}</tbody></table>
+    <p class="note">※ 이 값은 Supabase 스토리지(<code>mh-files</code>) 기준이에요. 기준 용량은 <code>config.js</code> 의 <code>STORAGE_QUOTA_MB</code>(지금 ${STORAGE_QUOTA_MB}MB, 무료 플랜 1GB). 데이터베이스는 따로 ${fmtBytes(Number(st.db_bytes) || 0)} 쓰는 중(무료 500MB).
+    ${RENDER_URL ? (st.render ? `<br>변환 서버 캐시: ${fmtBytes(st.render.bytes)} / ${fmtBytes(st.render.limit_bytes)} (${st.render.files}개 · 넘으면 오래된 것부터 자동 삭제, 서버 디스크이고 Supabase 용량과 무관)` : '<br>변환 서버 캐시 정보를 못 가져왔어요. (서버가 잠들어 있을 수 있어요)') : ''}</p>`;
 }

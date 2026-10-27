@@ -22,4 +22,10 @@ export const CONFIG = {
 
   // 민혁닷컴(이 사이트) 주소 — 드로어 메뉴의 "사이트 이동" 버튼에 쓰여요
   MCOM_URL: 'https://whale7777.github.io/M-com/',
+
+  // ---- v10: 민혁닷컴 JSON(mhq/1) → 서버에서 PDF 변환 ----
+  // PDF 변환 서버 주소 (render-server/README.md 로 배포한 주소, 끝에 / 없이). 비워두면 JSON 업로드 기능이 꺼져요.
+  RENDER_URL: '',
+  // 관리자 › 💾 저장공간 에서 "남은 용량"을 계산할 때 기준이 되는 총 용량(MB). Supabase 무료 플랜 = 1024
+  STORAGE_QUOTA_MB: 1024,
 };
