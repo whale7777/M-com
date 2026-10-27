@@ -1,5 +1,5 @@
-import { DAY, clone, fmtDate, driveDownloadUrl, drivePreviewUrl, RENDER_URL, STORAGE_QUOTA_MB } from './util.js?v=22';
-import { DEFAULT_TAX, DEFAULT_SITE, buildPrem } from './defaults.js?v=22';
+import { DAY, clone, fmtDate, driveDownloadUrl, drivePreviewUrl, RENDER_URL, STORAGE_QUOTA_MB } from './util.js?v=23';
+import { DEFAULT_TAX, DEFAULT_SITE, buildPrem } from './defaults.js?v=23';
 
 const must = ({ data, error }) => { if (error) throw error; return data; };
 
@@ -343,7 +343,9 @@ export function supabaseBackend(sb) {
     buyPass: (planId) => rpc('mh_buy_pass', { p_plan: planId }),
     myState: async (u) => {
       const p = must(await sb.from('mh_points').select('balance').eq('user_id', u.id).maybeSingle());
-      const o = must(await sb.from('mh_purchases').select('file_id,expires_at').eq('user_id', u.id));
+      let q = await sb.from('mh_purchases').select('file_id,expires_at').eq('user_id', u.id);
+      if (q.error) q = await sb.from('mh_purchases').select('file_id').eq('user_id', u.id); // v11 SQL 적용 전에도 동작
+      const o = must(q).map((r) => ({ ...r, expires_at: r.expires_at || new Date(Date.now() + 30 * 864e5).toISOString() }));
       const d = await sb.from('mh_dl').select('file_id,kind').eq('user_id', u.id); // v11 전이면 비어 있어도 괜찮아요
       const t = Date.now(), ex = {};
       o.forEach((r) => { ex[r.file_id] = Date.parse(r.expires_at) || 0; });

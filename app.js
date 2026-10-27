@@ -1,11 +1,11 @@
-import { CONFIG } from './config.js?v=22';
-import { $, $$, esc, clone, safeColor, safeLink, num, fmtDT, fmtDate, richText, ID_RE, toast, triggerDownload, DAY, PYNEST_URL } from './util.js?v=22';
-import { DEFAULT_TAX, DEFAULT_SITE, DEFAULT_MENU, DEFAULT_PLANS, DEFAULT_BANNERS } from './defaults.js?v=22';
-import { demoBackend, supabaseBackend } from './backend.js?v=22';
-import { S, subj, unitOf, findUnit, unitPath, unitIds, flatUnits, created, isNew, visibleFiles, unlocked, canMain, canSol, buyable, claimable, hasPreview, can, roleBadge, hasDl, dlKey, daysLeft, isExpired, loadLocalDl, saveLocalDl } from './state.js?v=22';
-import { bindAdmin, openAdmin, adminClick } from './admin.js?v=22';
-import { B, barHTML, syncSel, bulkClick, bindBulk } from './bulk.js?v=22';
-import { pencil, startEdit, cancelEdit, commitEdit, newPageHTML, afterNewPage, filePanelHTML, openFilePanel, bindEditor } from './editor.js?v=22';
+import { CONFIG } from './config.js?v=23';
+import { $, $$, esc, clone, safeColor, safeLink, num, fmtDT, fmtDate, richText, ID_RE, toast, triggerDownload, DAY, PYNEST_URL } from './util.js?v=23';
+import { DEFAULT_TAX, DEFAULT_SITE, DEFAULT_MENU, DEFAULT_PLANS, DEFAULT_BANNERS } from './defaults.js?v=23';
+import { demoBackend, supabaseBackend } from './backend.js?v=23';
+import { S, subj, unitOf, findUnit, unitPath, unitIds, flatUnits, created, isNew, visibleFiles, unlocked, canMain, canSol, buyable, claimable, hasPreview, can, roleBadge, hasDl, dlKey, daysLeft, isExpired, loadLocalDl, saveLocalDl } from './state.js?v=23';
+import { bindAdmin, openAdmin, adminClick } from './admin.js?v=23';
+import { B, barHTML, syncSel, bulkClick, bindBulk } from './bulk.js?v=23';
+import { pencil, startEdit, cancelEdit, commitEdit, newPageHTML, afterNewPage, filePanelHTML, openFilePanel, bindEditor } from './editor.js?v=23';
 
 S.DEMO = !CONFIG.SUPABASE_URL || /여기에/.test(CONFIG.SUPABASE_URL) || new URLSearchParams(location.search).has('demo');
 const demoFlags = {};
