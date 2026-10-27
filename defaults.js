@@ -1,4 +1,4 @@
-import { CONFIG } from './config.js?v=17';
+import { CONFIG } from './config.js?v=18';
 
 // 처음 한 번만 쓰이는 기본 과목·단원. 관리자 패널에서 마음대로 바꿀 수 있어.
 export const DEFAULT_TAX = [

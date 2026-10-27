@@ -59,6 +59,9 @@ begin
     'json_sets',    (select count(*) from per where is_json),
     'pdf_sets',     (select count(*) from per where not is_json),
     'db_bytes',     pg_database_size(current_database()),
+    -- 이 프로젝트의 "모든" 보관함 합계 (PyNest 등 같은 프로젝트를 쓰는 다른 보관함 포함 = Supabase 가 세는 스토리지 용량과 같은 기준)
+    'all_bytes',    coalesce((select sum(coalesce((metadata->>'size')::bigint, 0)) from storage.objects), 0),
+    'buckets',      coalesce((select jsonb_object_agg(bucket_id, b) from (select bucket_id, sum(coalesce((metadata->>'size')::bigint, 0)) as b from storage.objects group by bucket_id) x), '{}'::jsonb),
     'recent',       coalesce((
         select jsonb_agg(jsonb_build_object(
                  'file_id', r.fid, 'title', f.title, 'bytes', r.bytes, 'at', r.first_at, 'json', r.is_json, 'objects', r.n

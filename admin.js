@@ -1,6 +1,6 @@
-import { $, $$, esc, clone, uid, safeColor, fmtDate, fmtDT, num, ID_RE, toast, extractDriveId, saveBlob, move, DAY, MAX_UPLOAD_MB, fmtSize, STORAGE_QUOTA_MB, RENDER_URL } from './util.js?v=17';
-import { S, subj, unitOf, created, flatUnits, unitIds, can, ROLES } from './state.js?v=17';
-import { DEFAULT_MENU } from './defaults.js?v=17';
+import { $, $$, esc, clone, uid, safeColor, fmtDate, fmtDT, num, ID_RE, toast, extractDriveId, saveBlob, move, DAY, MAX_UPLOAD_MB, fmtSize, STORAGE_QUOTA_MB, RENDER_URL } from './util.js?v=18';
+import { S, subj, unitOf, created, flatUnits, unitIds, can, ROLES } from './state.js?v=18';
+import { DEFAULT_MENU } from './defaults.js?v=18';
 
 let editId = null, taxDraft = null, taxDirty = false, bannerDraft = null, bannerDirty = false, menuDraft = null, menuDirty = false;
 let passCache = [], pointsCache = [], chargesCache = [], ledgerCache = [];
@@ -632,7 +632,9 @@ async function renderStorage() {
     return;
   }
   const quota = st.quotaBytes || STORAGE_QUOTA_MB * 1048576;
-  const used = Number(st.total_bytes) || 0;
+  const mine = Number(st.total_bytes) || 0;                  // 민혁닷컴 보관함(mh-files)
+  const used = Number(st.all_bytes ?? st.total_bytes) || 0;   // 프로젝트 전체 보관함 (SQL 을 다시 실행하기 전이면 mh-files 만)
+  const others = Math.max(0, used - mine);
   const left = Math.max(0, quota - used);
   const pct = Math.min(100, Math.round(used / quota * 100));
   const recent = (st.recent || []);
@@ -644,7 +646,8 @@ async function renderStorage() {
   const level = pct >= 90 ? 'bad' : pct >= 70 ? 'warn' : 'ok';
   box.innerHTML = `
     <div class="sbar ${level}"><span class="fill" style="width:${pct}%"></span></div>
-    <p class="sbar-t"><b>${fmtBytes(used)}</b> 사용 / ${fmtBytes(quota)} 중 (${pct}%) · 남은 용량 <b>${fmtBytes(left)}</b></p>
+    <p class="sbar-t"><b>${fmtBytes(used)}</b> 사용 / ${fmtBytes(quota)} 중 (${pct}%) · 남은 용량 <b>${fmtBytes(left)}</b>
+      <br><small class="note">${st.all_bytes === undefined ? '※ SQL(schema_mhq.sql)을 다시 실행하면 PyNest 등 다른 보관함까지 합친 전체 사용량이 나와요. 지금은 민혁닷컴 보관함만 센 값이에요.' : `민혁닷컴 보관함 ${fmtBytes(mine)} + 다른 보관함(PyNest 등) ${fmtBytes(others)}`}</small></p>
     <div class="kpis">
       <div class="kpi"><b>${more === null ? '—' : '약 ' + num(more) + '개'}</b><span>최근 ${recent.length}개 평균(${fmtBytes(avgRecent)}) 기준<br>더 올릴 수 있는 자료 수</span></div>
       <div class="kpi"><b>${num(st.set_count || 0)}</b><span>자료 폴더 · 파일 ${num(st.object_count || 0)}개</span></div>
@@ -657,6 +660,6 @@ async function renderStorage() {
     <h4>🕒 최근 올린 자료 (용량 예측에 쓰는 표본)</h4>
     <table class="vt-admin"><thead><tr><th>자료</th><th>방식</th><th>용량</th><th>올린 날</th></tr></thead><tbody>${recent.map((r) => `
       <tr><td>${esc(r.title || '(삭제된 자료)')}</td><td>${r.json ? 'JSON' : 'PDF'}</td><td>${fmtBytes(Number(r.bytes))}</td><td>${fmtDT(r.at)}</td></tr>`).join('') || '<tr><td colspan="4">아직 업로드한 자료가 없어요.</td></tr>'}</tbody></table>
-    <p class="note">※ 이 값은 Supabase 스토리지(<code>mh-files</code>) 기준이에요. 기준 용량은 <code>config.js</code> 의 <code>STORAGE_QUOTA_MB</code>(지금 ${STORAGE_QUOTA_MB}MB, 무료 플랜 1GB). 데이터베이스는 따로 ${fmtBytes(Number(st.db_bytes) || 0)} 쓰는 중(무료 500MB).
+    <p class="note">※ 사용량은 Supabase 스토리지에서 실제로 읽어온 값이에요(모든 보관함 합계). 다만 <b>총 용량(한도)은 Supabase 가 알려주지 않아서</b> 직접 정한 값이에요 — 기준 용량은 <code>config.js</code> 의 <code>STORAGE_QUOTA_MB</code>(지금 ${STORAGE_QUOTA_MB}MB, 무료 플랜 1GB). 데이터베이스는 따로 ${fmtBytes(Number(st.db_bytes) || 0)} 쓰는 중(무료 500MB).
     ${RENDER_URL ? (st.render ? `<br>변환 서버 캐시: ${fmtBytes(st.render.bytes)} / ${fmtBytes(st.render.limit_bytes)} (${st.render.files}개 · 넘으면 오래된 것부터 자동 삭제, 서버 디스크이고 Supabase 용량과 무관)` : '<br>변환 서버 캐시 정보를 못 가져왔어요. (서버가 잠들어 있을 수 있어요)') : ''}</p>`;
 }
