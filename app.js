@@ -1,11 +1,11 @@
-import { CONFIG } from './config.js?v=21';
-import { $, $$, esc, clone, safeColor, safeLink, num, fmtDT, fmtDate, richText, ID_RE, toast, triggerDownload, DAY, PYNEST_URL } from './util.js?v=21';
-import { DEFAULT_TAX, DEFAULT_SITE, DEFAULT_MENU, DEFAULT_PLANS, DEFAULT_BANNERS } from './defaults.js?v=21';
-import { demoBackend, supabaseBackend } from './backend.js?v=21';
-import { S, subj, unitOf, findUnit, unitPath, unitIds, flatUnits, created, isNew, visibleFiles, unlocked, canMain, canSol, buyable, claimable, hasPreview, can, roleBadge } from './state.js?v=21';
-import { bindAdmin, openAdmin, adminClick } from './admin.js?v=21';
-import { B, barHTML, syncSel, bulkClick, bindBulk } from './bulk.js?v=21';
-import { pencil, startEdit, cancelEdit, commitEdit, newPageHTML, afterNewPage, filePanelHTML, openFilePanel, bindEditor } from './editor.js?v=21';
+import { CONFIG } from './config.js?v=22';
+import { $, $$, esc, clone, safeColor, safeLink, num, fmtDT, fmtDate, richText, ID_RE, toast, triggerDownload, DAY, PYNEST_URL } from './util.js?v=22';
+import { DEFAULT_TAX, DEFAULT_SITE, DEFAULT_MENU, DEFAULT_PLANS, DEFAULT_BANNERS } from './defaults.js?v=22';
+import { demoBackend, supabaseBackend } from './backend.js?v=22';
+import { S, subj, unitOf, findUnit, unitPath, unitIds, flatUnits, created, isNew, visibleFiles, unlocked, canMain, canSol, buyable, claimable, hasPreview, can, roleBadge, hasDl, dlKey, daysLeft, isExpired, loadLocalDl, saveLocalDl } from './state.js?v=22';
+import { bindAdmin, openAdmin, adminClick } from './admin.js?v=22';
+import { B, barHTML, syncSel, bulkClick, bindBulk } from './bulk.js?v=22';
+import { pencil, startEdit, cancelEdit, commitEdit, newPageHTML, afterNewPage, filePanelHTML, openFilePanel, bindEditor } from './editor.js?v=22';
 
 S.DEMO = !CONFIG.SUPABASE_URL || /여기에/.test(CONFIG.SUPABASE_URL) || new URLSearchParams(location.search).has('demo');
 const demoFlags = {};
@@ -271,7 +271,7 @@ function homeHTML() {
 
   <section class="promo-row">
     <a class="promo p1" href="#/pass"><span>👑</span><div><b>M패스</b><p>기간 안에 정해진 건수만큼, 1건당 최대 ${Math.max(0, ...(S.site.passPlans || []).map((pl) => Math.round((1 - pl.price / Math.max(pl.quota, 1) / 1800) * 100)))}% 저렴하게</p></div><em>자세히 ›</em></a>
-    <a class="promo p2" href="#/points"><span>🪙</span><div><b>M포인트</b><p>필요한 세트만 골라서 구매. 한 번 사면 계속 받아요</p></div><em>충전하기 ›</em></a>
+    <a class="promo p2" href="#/points"><span>🪙</span><div><b>M포인트</b><p>필요한 세트만 골라서 구매. 사고 나서 30일 동안 다시 받아요</p></div><em>충전하기 ›</em></a>
   </section>`;
 }
 function startCarousel() {
@@ -353,7 +353,7 @@ function tileHTML(f) {
   }
   const open = canMain(f);
   return `<div class="tl ${lock ? 'lock' : ''} ${f.visible === false ? 'hid' : ''}"><a class="tl-t" href="#/f/${encodeURIComponent(f.id)}">${esc(f.title)}${isNew(f) ? '<em class="nw">N</em>' : ''}${f.visible === false ? '<em class="hd">숨김</em>' : ''}</a>
-    ${open ? `<button class="tl-i" data-dl="${esc(f.id)}" type="button" aria-label="다운로드">⬇</button>` : `<a class="tl-i" href="#/f/${encodeURIComponent(f.id)}" aria-label="자세히">${buyable(f) ? '🪙' : '🔒'}</a>`}</div>`;
+    ${open ? `<button class="tl-i ${hasDl(f.id, 'main') ? 'done' : ''}" data-dl="${esc(f.id)}" type="button" aria-label="다운로드" title="${hasDl(f.id, 'main') ? '이미 받았어요 (다시 받기)' : '다운로드'}">⬇</button>` : `<a class="tl-i" href="#/f/${encodeURIComponent(f.id)}" aria-label="자세히" title="${isExpired(f) ? '만료됐어요 · 다시 구매/M패스' : ''}">${isExpired(f) ? '⌛' : buyable(f) ? '🪙' : '🔒'}</a>`}</div>`;
 }
 const treeDepth = (units) => Math.max(0, ...(units || []).map((u) => 1 + treeDepth(u.children)));
 const unitHref = (sj, id) => `#/${encodeURIComponent(sj.id)}${id ? '/' + encodeURIComponent(id) : ''}`;
@@ -439,7 +439,7 @@ function detailHTML(id) {
       <section class="d-sec"><h2>이 자료에는 ${can('content') ? '<button class="pencil" type="button" data-srcopen="' + esc(f.id) + '" title="파일 바꾸기" aria-label="파일 바꾸기">✏️ <small>파일 바꾸기</small></button>' : ''}</h2>
         <ul class="incl"><li>📄 <b>문제 PDF</b> — ${Number(f.count) || '-'}문항</li>
           <li>${f.hasSolution ? '📝 <b>해설 PDF</b> — 풀이 수록' : '<span class="dim">📝 해설 PDF 없음</span>'}</li>
-          <li>♾️ <b>구매하거나 받은 뒤 재다운로드</b> 무제한 (내 정보에서 확인)</li></ul>
+          <li>🔁 <b>구매하거나 받은 뒤 30일 동안</b> 재다운로드 (내 정보에서 확인)</li></ul>
         ${can('content') ? filePanelHTML(f) : ''}</section>
       <section class="d-sec"><h2>미리보기</h2>
         ${hasPreview(f) ? '<div id="prevBox" class="prev-box"><button class="btn ghost" data-act="preview" type="button">👁 샘플 문제 보기</button></div>' : '<p class="dim">등록된 미리보기가 없어요.</p>'}</section>
@@ -454,8 +454,8 @@ function buyBoxHTML(f) {
   const priceBig = free ? '<b class="pr free">무료</b>' : `<b class="pr">🪙 ${num(f.price)} <small>P</small></b>`;
   const priceEd = `<span class="edhost" data-edhost="price" data-fid="${id}"><span class="edv">${priceBig}</span>${pencil('price', '가격 수정')}</span>`;
   const btns = [];
-  if (canMain(f)) btns.push(`<button class="btn primary lg block" data-dl="${id}" type="button">⬇ 문제 PDF 바로 다운로드</button>`);
-  if (canSol(f)) btns.push(`<button class="btn ghost lg block" data-dl="${id}" data-kind="solution" type="button">📝 해설 PDF 다운로드</button>`);
+  if (canMain(f)) btns.push(`<button class="btn primary lg block ${hasDl(f.id, 'main') ? 'done' : ''}" data-dl="${id}" type="button">${hasDl(f.id, 'main') ? '✓ 문제 PDF 다시 받기' : '⬇ 문제 PDF 바로 다운로드'}</button>`);
+  if (canSol(f)) btns.push(`<button class="btn ghost lg block ${hasDl(f.id, 'solution') ? 'done' : ''}" data-dl="${id}" data-kind="solution" type="button">${hasDl(f.id, 'solution') ? '✓ 해설 PDF 다시 받기' : '📝 해설 PDF 다운로드'}</button>`);
   if (buyable(f)) btns.push(`<button class="btn buy lg block" data-buy="${id}" type="button">🪙 ${num(f.price)}P로 구매하기</button>`);
   if (claimable(f)) btns.push(`<button class="btn pass lg block" data-claim="${id}" type="button">👑 M패스로 받기 <small>(남은 ${num(S.pass.left)}건)</small></button>`);
   else if (!unlocked(f) && S.user && S.pass.active) btns.push('<a class="btn ghost block" href="#/pass">👑 M패스 건수를 다 썼어요 · 추가 구매</a>');
@@ -463,8 +463,10 @@ function buyBoxHTML(f) {
   const me = S.user
     ? `<div class="mypts"><span>내 포인트</span><b>🪙 ${num(S.points)} P</b><a href="#/points">충전</a></div>${S.pass.active ? `<div class="mypts"><span>M패스 남은 건수</span><b>👑 ${num(S.pass.left)}건</b><a href="#/pass">보기</a></div>` : ''}`
     : '<div class="mypts"><span>구매하려면 로그인이 필요해요</span><button class="btn sm primary" data-act="login" type="button">로그인</button></div>';
-  const note = unlocked(f) && !free ? (can('content') ? '' : '<p class="b-note ok">✅ 내 자료예요. 언제든 다시 받을 수 있어요</p>')
-    : (!free ? '<p class="b-note">구매하거나 M패스로 받으면 문제·해설 PDF를 계속 다시 받을 수 있어요.</p>' : '');
+  const dleft = daysLeft(f.id);
+  const note = unlocked(f) && !free ? (can('content') ? '' : `<p class="b-note ok">✅ 내 자료예요. ${dleft === null ? '' : `<b>${dleft}일</b> 남았어요 (${fmtDate(new Date(S.exp.get(f.id)))}까지) · `}기간 안에는 다시 받을 수 있어요</p>`)
+    : isExpired(f) ? '<p class="b-note exp">⌛ 받은 지 30일이 지나 만료됐어요. 다시 구매하거나 M패스 건수를 쓰면 30일 더 받을 수 있어요.</p>'
+    : (!free ? '<p class="b-note">구매하거나 M패스로 받으면 30일 동안 문제·해설 PDF를 다시 받을 수 있어요.</p>' : '');
   return `<div class="buy-box"><div class="b-price"><span>${free ? '무료 자료' : '프리미엄'}</span>${priceEd}</div>
     <div class="b-btns">${btns.join('')}</div>${note}${me}</div>`;
 }
@@ -477,6 +479,11 @@ const loginPrompt = (why) => `<div class="need-login"><h2>로그인이 필요해
 const STATUS = { pending: ['대기중', 'soon'], done: ['완료', 'ok'], rejected: ['거절', 'exp'] };
 const KIND = { grant: '지급', deduct: '차감', charge: '충전', purchase: '구매' };
 
+const expTag = (p) => {
+  if (!p.expiresAt) return '';
+  const left = Math.ceil((p.expiresAt - Date.now()) / 86400000);
+  return left <= 0 ? '<b class="exp-t">만료됨</b>' : `<b class="${left <= 5 ? 'exp-t' : ''}">${left}일 남음</b> (${fmtDate(new Date(p.expiresAt))}까지)`;
+};
 async function meHTML() {
   document.title = '내 정보 — 민혁닷컴';
   if (!S.user) return loginPrompt('내 포인트와 구매한 자료는 로그인 후 볼 수 있어요.');
@@ -489,10 +496,10 @@ async function meHTML() {
     <div class="me-card"><span>M패스</span>${S.pass.active ? `<b>👑 ${esc(S.pass.plan || '이용중')}</b><small>남은 ${num(S.pass.left)}건 / 총 ${num(S.pass.quota)}건 · ${esc(S.pass.expires || '무기한')}까지</small>` : '<small>없음</small><a class="btn sm ghost" href="#/pass">보러가기</a>'}</div>
     <div class="me-card pts"><span>내 M포인트</span><b>🪙 ${num(S.points)} P</b><a class="btn sm primary" href="#/points">충전하기</a></div>
   </div>
-  <section class="blk"><div class="blk-h"><h2>내 자료 <small>${mine.length}개 (구매 + M패스로 받은 자료)</small></h2></div>
+  <section class="blk"><div class="blk-h"><h2>내 자료 <small>${mine.length}개 (구매 + M패스 · 받은 날부터 30일)</small></h2></div>
     ${mine.length ? `<div class="rows">${mine.map(({ p, f }) => `<div class="row-item"><a class="ri-t" href="#/f/${encodeURIComponent(f.id)}">${esc(f.title)}</a>
-      <small>${p.price > 0 ? num(p.price) + 'P 구매' : 'M패스로 받음'} · ${fmtDT(p.at)}</small>
-      <span class="ri-b"><button class="btn sm primary" data-dl="${esc(f.id)}" type="button">⬇ 문제</button>${f.hasSolution ? `<button class="btn sm ghost" data-dl="${esc(f.id)}" data-kind="solution" type="button">📝 해설</button>` : ''}</span></div>`).join('')}</div>`
+      <small>${p.price > 0 ? num(p.price) + 'P 구매' : 'M패스로 받음'} · ${fmtDT(p.at)} · ${expTag(p)}</small>
+      <span class="ri-b">${p.expiresAt && p.expiresAt <= Date.now() ? `<a class="btn sm buy" href="#/f/${encodeURIComponent(f.id)}">⌛ 만료 · 다시 받기</a>` : `<button class="btn sm primary ${hasDl(f.id, 'main') ? 'done' : ''}" data-dl="${esc(f.id)}" type="button">⬇ 문제</button>${f.hasSolution ? `<button class="btn sm ghost ${hasDl(f.id, 'solution') ? 'done' : ''}" data-dl="${esc(f.id)}" data-kind="solution" type="button">📝 해설</button>` : ''}`}</span></div>`).join('')}</div>`
       : `<p class="empty-s">아직 구매하거나 받은 자료가 없어요. <a href="#/list?tier=premium">프리미엄 자료 보러가기</a></p>`}</section>
   <section class="blk"><div class="blk-h"><h2>포인트 내역</h2></div>
     ${led.length ? `<div class="tbl"><div class="tr th"><span>일시</span><span>구분</span><span>내용</span><span>변동</span><span>잔액</span></div>${led.map((l) =>
@@ -510,7 +517,7 @@ async function pointsHTML() {
   let ch = [];
   if (S.user) { try { ch = await S.api.myCharges(S.user); } catch (e) { console.warn(e); } }
   const pending = ch.filter((c) => c.status === 'pending').length;
-  return `<div class="page-h"><h1>🪙 M포인트 충전</h1><p>충전한 포인트로 프리미엄 자료를 한 세트씩 구매해요. 1회 구매하면 계속 다운로드할 수 있어요.</p></div>
+  return `<div class="page-h"><h1>🪙 M포인트 충전</h1><p>충전한 포인트로 프리미엄 자료를 한 세트씩 구매해요. 1회 구매하면 30일 동안 다시 다운로드할 수 있어요.</p></div>
   <div class="two-col">
     <section class="panel"><h2>1. 충전할 금액 고르기</h2>
       <div class="packs">${packs.map((p, i) => `<label class="pack ${i === packSel ? 'on' : ''}"><input type="radio" name="pack" value="${i}" ${i === packSel ? 'checked' : ''}><b>${num(p.p)} P</b><span>${esc(p.l || '')}</span></label>`).join('') || '<p class="empty-s">충전 상품이 아직 없어요. 관리자에게 문의해주세요.</p>'}</div>
@@ -526,7 +533,7 @@ async function pointsHTML() {
         ${ch.length ? `<h3>최근 신청</h3><div class="rows">${ch.slice(0, 5).map((c) => `<div class="row-item"><span>${chargeLabel(c)}</span><small>${fmtDT(c.at)}</small><i class="pill ${STATUS[c.status]?.[1] || ''}">${STATUS[c.status]?.[0] || c.status}</i></div>`).join('')}</div>` : ''}` : '<p class="empty-s">로그인하면 내 포인트가 보여요.</p>'}
       <h3>자주 묻는 질문</h3>
       <details><summary>포인트는 언제 들어오나요?</summary><p>입금 확인 후 관리자가 승인하면 바로 반영돼요. 관리자가 확인하는 시간에 따라 다를 수 있어요.</p></details>
-      <details><summary>구매하거나 받은 자료는 계속 받을 수 있나요?</summary><p>네. 한 번 구매하거나 M패스로 받은 자료는 내 정보에서 언제든 다시 받을 수 있어요. 패스 기간이 끝나도 그대로예요.</p></details>
+      <details><summary>구매하거나 받은 자료는 언제까지 받을 수 있나요?</summary><p>구매하거나 M패스로 받은 날부터 30일 동안 내 정보에서 다시 받을 수 있어요. 30일이 지나면 만료되고, 다시 구매하거나 M패스 건수를 쓰면 30일이 새로 시작돼요. 패스 기간이 끝나도 30일은 그대로예요.</p></details>
       <details><summary>M패스랑 뭐가 달라요?</summary><p>M패스는 정해진 기간 안에 정해진 건수만큼 자료를 받는 이용권이고, 1건당 가격이 M포인트 개별 구매보다 저렴해요. M패스는 포인트와 별개로 계좌이체로 신청해요 (M패스 페이지).</p></details>
     </aside>
   </div>`;
@@ -574,7 +581,7 @@ async function passHTML() {
   <div class="cmp">
     <div class="cmp-c"><h3>무료</h3><ul><li>무료 자료 다운로드</li><li>미리보기</li></ul><b>0원</b></div>
     <div class="cmp-c"><h3>🪙 낱개 구매</h3><ul><li>필요한 세트만 골라 구매</li><li>자료 1개 약 1,500~2,200P (자료마다 달라요)</li><li>해설 PDF 포함</li></ul><b>세트마다 결제</b><a class="btn ghost block" href="#/points">포인트 충전</a></div>
-    <div class="cmp-c best"><span class="ribbon">추천</span><h3>👑 M패스</h3><ul><li>기간 안에 정해진 건수 받기</li><li>해설 PDF 포함 (1건 = 자료 1개)</li><li>받은 자료는 기간이 끝나도 계속 다운로드</li></ul><b>1건당 최대 ${Math.max(0, ...plans.map(SAVE))}% 절약</b></div>
+    <div class="cmp-c best"><span class="ribbon">추천</span><h3>👑 M패스</h3><ul><li>기간 안에 정해진 건수 받기</li><li>해설 PDF 포함 (1건 = 자료 1개)</li><li>받은 자료는 30일 동안 다시 다운로드</li></ul><b>1건당 최대 ${Math.max(0, ...plans.map(SAVE))}% 절약</b></div>
   </div>
   <div class="info-box">${nl2br(S.site.passInfo)}</div>
   <p class="note">문의: ${esc(S.site.contact || '')}</p>`;
@@ -586,7 +593,7 @@ function aboutHTML() {
   <section class="panel"><h2>민혁닷컴은?</h2><p class="pre">${nl2br(S.site.about)}</p></section>
   <section class="panel"><h2>자료는 이렇게 받아요</h2>
     <ol class="plain"><li><b>무료 자료</b> — 상세 페이지의 다운로드 버튼을 누르면 바로 PDF가 내려받아져요.</li>
-      <li><b>프리미엄 자료</b> — M포인트로 구매하거나, M패스의 받기 건수를 써서 가져가요. 구매하거나 받은 자료는 계속 다시 받을 수 있어요.</li>
+      <li><b>프리미엄 자료</b> — M포인트로 구매하거나, M패스의 받기 건수를 써서 가져가요. 구매하거나 받은 자료는 30일 동안 다시 받을 수 있어요.</li>
       <li><b>M패스</b> — 45일·90일·6개월·12개월 중 골라 계좌이체로 신청해요. 기간 안에 정해진 건수만큼 자료(문제+해설)를 받을 수 있어요.</li>
       <li><b>해설 PDF</b> — 해설이 있는 자료는 구매하거나 받으면 함께 열려요.</li></ol></section>
   <section class="panel"><h2>계정</h2><p>PyNest에서 쓰는 ID와 비밀번호 그대로 로그인할 수 있어요. 민혁닷컴에서 가입해도 같은 계정이 만들어져요.</p></section>
@@ -675,6 +682,14 @@ async function download(id, kind) {
       triggerDownload(url, url.startsWith('blob:') ? nm : '');
       toast('다운로드 시작! 📥');
     }
+    const kk = kind === 'solution' ? 'solution' : 'main';
+    S.dl.add(dlKey(f.id, kk)); saveLocalDl();
+    if (S.user) S.api.markDl?.(f.id, kk);
+    document.querySelectorAll(`[data-dl="${CSS.escape(f.id)}"]`).forEach((b) => {
+      if ((b.dataset.kind || 'main') !== kk) return;
+      b.classList.add('done');
+      if (b.classList.contains('lg')) b.textContent = kk === 'solution' ? '✓ 해설 PDF 다시 받기' : '✓ 문제 PDF 다시 받기';
+    });
     if (kind === 'main') {
       f.downloads = (f.downloads || 0) + 1;
       S.api.countDownload(f.id);
@@ -721,7 +736,7 @@ function openBuy(id, mode = 'buy') {
       $('#dlgBuy h3').textContent = '👑 M패스로 받기';
       $('#buyBody').innerHTML = `<div class="buy-item"><b>${esc(f.title)}</b><small>문제 PDF${f.hasSolution ? ' + 해설 PDF' : ''}</small></div>
         <dl class="buy-calc"><dt>M패스 남은 건수</dt><dd>${num(S.pass.left)}건</dd><dt>받은 뒤</dt><dd>${num(Math.max(S.pass.left - 1, 0))}건</dd></dl>
-        <p class="note">1건이 차감돼요. 한 번 받은 자료는 계속 다시 받을 수 있어요.</p>`;
+        <p class="note">1건이 차감돼요. 받은 날부터 30일 동안 다시 받을 수 있어요.</p>`;
       $('#buyOk').textContent = '받기 확정';
       $('#buyOk').classList.remove('hidden');
       $('#buyCharge').classList.add('hidden');
@@ -754,6 +769,7 @@ async function confirmBuy() {
     }[mode][r]) || common[r] || '처리하지 못했어요';
     $('#dlgBuy').close();
     toast(msg);
+    if (r === 'ok' && mode !== 'pass') { S.dl.delete(dlKey(id, 'main')); S.dl.delete(dlKey(id, 'solution')); saveLocalDl(); } // 다시 사면 회색 초기화
     await refreshUserState();
     await route();
   } catch (err) { console.error(err); toast('처리 중 오류가 났어요. 잠시 뒤 다시 시도해줘'); }
@@ -931,11 +947,12 @@ async function loadFiles() {
   await loadNotices();
 }
 async function refreshUserState() {
-  S.hasPass = false; S.points = 0; S.owned = new Set();
+  S.hasPass = false; S.points = 0; S.owned = new Set(); S.exp = new Map(); S.expired = new Set();
+  S.dl = new Set(); loadLocalDl();
   S.pass = { active: false, left: 0, quota: 0, used: 0, expires: null, plan: '' };
   if (S.user) {
     try { S.pass = await S.api.myPass(S.user); S.hasPass = S.pass.active; } catch (e) { console.warn(e); }
-    try { const st = await S.api.myState(S.user); S.points = st.points; S.owned = new Set(st.owned); } catch (e) { console.warn(e); }
+    try { const st = await S.api.myState(S.user); S.points = st.points; S.owned = new Set(st.owned); S.exp = new Map(Object.entries(st.exp || {})); S.expired = new Set(st.expired || []); (st.dl || []).forEach((k) => S.dl.add(k)); } catch (e) { console.warn(e); }
   }
   renderHeader();
 }

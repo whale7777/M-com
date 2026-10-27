@@ -453,3 +453,11 @@ textarea.ed-in{width:100%;resize:vertical}
 .vt-admin th,.vt-admin td{padding:6px 8px;border-bottom:1px solid var(--line,#e6e6ef);text-align:left}
 .jl{display:block;font-size:.86rem;margin:6px 0}
 .jl input{display:block;margin-top:4px}
+
+/* v11: 이미 받은 파일은 회색 / 만료 표시 */
+.tl-i.done{background:#eceef3;border-color:#d5d9e3;color:#a0a7b8}
+.tl-i.done:hover{background:#e3e6ee;color:#7d869b}
+.btn.done,.btn.primary.done,.btn.ghost.done{background:#eceef3;border-color:#d5d9e3;color:#7d869b}
+.btn.done:hover{background:#e3e6ee;border-color:#c9cedb;color:#5b6479}
+.b-note.exp{color:#b45309;font-weight:700}
+.exp-t{color:#d9480f}

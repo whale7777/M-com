@@ -1,4 +1,4 @@
-import { CONFIG } from './config.js?v=21';
+import { CONFIG } from './config.js?v=22';
 
 // 처음 한 번만 쓰이는 기본 과목·단원. 관리자 패널에서 마음대로 바꿀 수 있어.
 export const DEFAULT_TAX = [
@@ -17,7 +17,7 @@ export const DEFAULT_TAX = [
 
 export const DEFAULT_BANNERS = [
   { id: 'b_pass', on: true, title: 'M패스로 더 싸게\n자료를 모아보세요', sub: '45일 19,900원부터. 1건당 최대 43% 저렴하게 문제·해설을 받아요', cta: 'M패스 알아보기', link: '#/pass', color: '#4f46e5', emoji: '👑' },
-  { id: 'b_point', on: true, title: '필요한 세트만 골라서\nM포인트로 구매', sub: '충전 신청 → 승인 → 바로 다운로드. 한 번 산 자료는 계속 받을 수 있어요', cta: 'M포인트 충전하기', link: '#/points', color: '#0ea5a4', emoji: '🪙' },
+  { id: 'b_point', on: true, title: '필요한 세트만 골라서\nM포인트로 구매', sub: '충전 신청 → 승인 → 바로 다운로드. 산 날부터 30일 동안 다시 받을 수 있어요', cta: 'M포인트 충전하기', link: '#/points', color: '#0ea5a4', emoji: '🪙' },
   { id: 'b_pynest', on: true, title: '파이썬은 PyNest에서\n수업과 과제를 한 곳에', sub: '민혁닷컴 계정(ID)으로 그대로 로그인할 수 있어요', cta: 'PyNest 바로가기', link: '@pynest', color: '#e8590c', emoji: '🐍' },
 ];
 
@@ -60,7 +60,7 @@ export const DEFAULT_SITE = {
   notice: '',
   heroSub: '과목별로 엄선한 10~15문항 세트. 무료 자료는 누구나, 프리미엄은 1,500P부터 낱개로, 또는 M패스로 더 저렴하게.',
   contact: CONFIG.CONTACT || '',
-  passInfo: 'M패스는 정해진 기간 동안 정해진 건수만큼 자료를 받을 수 있는 이용권이에요.\n한 번 받은 자료는 기간이 끝나도 계속 다시 받을 수 있어요.',
+  passInfo: 'M패스는 정해진 기간 동안 정해진 건수만큼 자료를 받을 수 있는 이용권이에요.\n받은 자료는 받은 날부터 30일 동안 다시 받을 수 있어요. 30일이 지나면 만료돼요.',
   chargeInfo: '입금 계좌: (은행) 000-0000-0000 (예금주)\n입금 후 아래 신청을 보내주면 확인 뒤 포인트(또는 M패스)를 넣어드려요.',
   about: '민혁닷컴은 물리·화학·생물·지구과학 각 단원의 좋은 문제만 10~15문항씩 묶어 PDF로 제공하는 문제 은행이에요.\n직접 풀어보고 고른 문제로, 개념을 확인하고 실전 감각을 키우는 데 맞췄어요.',
   packs: DEFAULT_PACKS,

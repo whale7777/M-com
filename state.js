@@ -1,4 +1,4 @@
-import { DAY } from './util.js?v=21';
+import { DAY } from './util.js?v=22';
 
 // 앱 전체가 같이 쓰는 상태. (여러 모듈이 같은 객체를 보기 때문에 한 곳에 모아뒀어요)
 export const S = {
@@ -10,7 +10,10 @@ export const S = {
   hasPass: false,
   pass: { active: false, left: 0, quota: 0, used: 0, expires: null, plan: '' },
   points: 0,
-  owned: new Set(),
+  owned: new Set(),   // 지금 유효한(30일 안) 구매/M패스 자료
+  exp: new Map(),     // 자료 id → 만료 시각(ms)
+  expired: new Set(), // 30일이 지나 만료된 자료 id
+  dl: new Set(),      // 받은 적 있는 파일 'id:main' / 'id:solution'
   tax: [],
   site: {},
   files: [],
@@ -65,3 +68,17 @@ export const canSol = (f) => !!f.hasSolution && unlocked(f);
 export const buyable = (f) => !unlocked(f) && Number(f.price) > 0;
 // M패스로 받을 수 있나? (패스가 있고 남은 건수가 있을 때)
 export const claimable = (f) => !unlocked(f) && S.pass.active && S.pass.left > 0;
+
+/* ---- v11: 다운로드 기록(회색 버튼) · 30일 만료 ---- */
+const DLKEY = 'mcom_dl';
+export const dlKey = (id, kind) => `${id}:${kind === 'solution' ? 'solution' : 'main'}`;
+export const hasDl = (id, kind) => S.dl.has(dlKey(id, kind));
+export function loadLocalDl() {
+  try { const a = JSON.parse(localStorage.getItem(DLKEY) || '[]'); if (Array.isArray(a)) a.forEach((k) => S.dl.add(String(k))); } catch { /* 저장소를 못 써도 괜찮아요 */ }
+}
+export function saveLocalDl() {
+  try { localStorage.setItem(DLKEY, JSON.stringify([...S.dl].slice(-2000))); } catch { /* 무시 */ }
+}
+// 남은 일수 (올림). 만료 정보가 없으면 null
+export const daysLeft = (id) => { const t = S.exp.get(id); return t ? Math.max(0, Math.ceil((t - Date.now()) / 86400000)) : null; };
+export const isExpired = (f) => S.expired.has(f.id) && !S.owned.has(f.id);

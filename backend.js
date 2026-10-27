@@ -1,5 +1,5 @@
-import { DAY, clone, fmtDate, driveDownloadUrl, drivePreviewUrl, RENDER_URL, STORAGE_QUOTA_MB } from './util.js?v=21';
-import { DEFAULT_TAX, DEFAULT_SITE, buildPrem } from './defaults.js?v=21';
+import { DAY, clone, fmtDate, driveDownloadUrl, drivePreviewUrl, RENDER_URL, STORAGE_QUOTA_MB } from './util.js?v=22';
+import { DEFAULT_TAX, DEFAULT_SITE, buildPrem } from './defaults.js?v=22';
 
 const must = ({ data, error }) => { if (error) throw error; return data; };
 
@@ -44,6 +44,8 @@ export function demoBackend(flags = {}) {
   const pts = { demo_user: 700, student01: 1500 };
   const owned = new Set();
   const paid = {}; // 자료별로 낸 포인트 (M패스로 받은 건 0)
+  const exp = {};  // 자료별 만료 시각 (구매 후 30일)
+  const dls = new Set();
   let ledger = [{ id: 1, username: 'demo_user', delta: 1000, balance_after: 1000, kind: 'charge', memo: '충전 승인 예시', at: now - 5 * DAY, fileId: null }];
   let charges = [
     { id: 'c1', username: 'student01', amount: 3000, depositor: '김학생', status: 'pending', at: now - 3600e3 },
@@ -81,19 +83,20 @@ export function demoBackend(flags = {}) {
     ],
     staffSet: async (name, role) => (name === 'nobody' ? 'not_found' : 'ok'),
     myPass: async () => passInfo(cur ? passOf(cur.username) : null),
-    myState: async () => ({ points: cur ? pts[cur.username] || 0 : 0, owned: [...owned] }),
+    myState: async () => ({ points: cur ? pts[cur.username] || 0 : 0, owned: [...owned].filter((id) => (exp[id] || 0) > Date.now()), exp: { ...exp }, expired: [...owned].filter((id) => (exp[id] || 0) <= Date.now()), dl: [...dls] }),
+    markDl: async (id, kind) => { dls.add(id + ':' + kind); },
     getDriveId: async () => 'DEMO',
     getPremium: async (id) => clone(prem[id] || {}),
     buyFile: async (id) => {
       const f = find(id);
       if (!cur) return 'login';
       if (!f || f.visible === false) return 'not_found';
-      if (owned.has(id)) return 'already';
+      if (owned.has(id) && (exp[id] || 0) > Date.now()) return 'already';
       if (!(f.price > 0)) return 'not_for_sale';
       const bal = pts[cur.username] || 0;
       if (bal < f.price) return 'insufficient';
       pts[cur.username] = bal - f.price;
-      owned.add(id); paid[id] = f.price;
+      owned.add(id); paid[id] = f.price; exp[id] = Date.now() + 30 * DAY; dls.delete(id + ':main'); dls.delete(id + ':solution');
       log(cur.username, -f.price, 'purchase', f.title, id);
       return 'ok';
     },
@@ -102,12 +105,12 @@ export function demoBackend(flags = {}) {
       if (!cur) return 'login';
       if (!f || f.visible === false) return 'not_found';
       if (f.tier === 'free') return 'free';
-      if (owned.has(id)) return 'already';
+      if (owned.has(id) && (exp[id] || 0) > Date.now()) return 'already';
       const p = passOf(cur.username), pi = passInfo(p);
       if (!pi.active) return 'no_pass';
       if (pi.left <= 0) return 'no_quota';
       p.used = (p.used || 0) + 1;
-      owned.add(id); paid[id] = 0;
+      owned.add(id); paid[id] = 0; exp[id] = Date.now() + 30 * DAY; dls.delete(id + ':main'); dls.delete(id + ':solution');
       return 'ok';
     },
     buyPass: async (planId) => {
@@ -129,7 +132,7 @@ export function demoBackend(flags = {}) {
     },
     myLedger: async () => clone(ledger.filter((l) => cur && l.username === cur.username)),
     myCharges: async () => clone(charges.filter((c) => cur && c.username === cur.username)),
-    myPurchases: async () => files.filter((f) => owned.has(f.id)).map((f) => ({ fileId: f.id, price: paid[f.id] ?? f.price, at: Date.now() })),
+    myPurchases: async () => files.filter((f) => owned.has(f.id)).map((f) => ({ fileId: f.id, price: paid[f.id] ?? f.price, at: Date.now(), expiresAt: exp[f.id] || 0 })),
     requestPass: async (planId, depositor) => {
       if (!cur) return 'login';
       const pl = (meta.site.passPlans || []).find((x) => x.id === planId);
@@ -340,8 +343,12 @@ export function supabaseBackend(sb) {
     buyPass: (planId) => rpc('mh_buy_pass', { p_plan: planId }),
     myState: async (u) => {
       const p = must(await sb.from('mh_points').select('balance').eq('user_id', u.id).maybeSingle());
-      const o = must(await sb.from('mh_purchases').select('file_id').eq('user_id', u.id));
-      return { points: p ? p.balance : 0, owned: o.map((r) => r.file_id) };
+      const o = must(await sb.from('mh_purchases').select('file_id,expires_at').eq('user_id', u.id));
+      const d = await sb.from('mh_dl').select('file_id,kind').eq('user_id', u.id); // v11 전이면 비어 있어도 괜찮아요
+      const t = Date.now(), ex = {};
+      o.forEach((r) => { ex[r.file_id] = Date.parse(r.expires_at) || 0; });
+      return { points: p ? p.balance : 0, owned: o.filter((r) => ex[r.file_id] > t).map((r) => r.file_id), exp: ex,
+        expired: o.filter((r) => ex[r.file_id] <= t).map((r) => r.file_id), dl: d.error ? [] : (d.data || []).map((r) => r.file_id + ':' + r.kind) };
     },
     getPremium: async (id) => {
       const r = must(await sb.from('mh_premium').select('drive_id,solution_id').eq('file_id', id).maybeSingle());
@@ -388,10 +395,11 @@ export function supabaseBackend(sb) {
       return { ...st, quotaBytes: STORAGE_QUOTA_MB * 1048576, render };
     },
     buyFile: (id) => rpc('mh_buy_file', { p_file: id }),
+    markDl: async (id, kind) => { try { await sb.rpc('mh_mark_dl', { p_file: id, p_kind: kind }); } catch { /* 기록 실패는 무시 */ } },
     myLedger: async (u) => must(await sb.from('mh_ledger').select('*').eq('user_id', u.id).order('created_at', { ascending: false }).limit(100)).map(ledgerFrom),
     myCharges: async (u) => must(await sb.from('mh_charges').select('*').eq('user_id', u.id).order('created_at', { ascending: false }).limit(30)).map(chargeFrom),
     myPurchases: async (u) => must(await sb.from('mh_purchases').select('*').eq('user_id', u.id).order('created_at', { ascending: false }))
-      .map((r) => ({ fileId: r.file_id, price: r.price, at: Date.parse(r.created_at) || 0 })),
+      .map((r) => ({ fileId: r.file_id, price: r.price, at: Date.parse(r.created_at) || 0, expiresAt: Date.parse(r.expires_at) || 0 })),
     requestPass: (planId, depositor) => rpc('mh_request_pass', { p_plan: planId, p_depositor: depositor || '' }),
     requestCharge: (amount, depositor) => rpc('mh_request_charge', { p_amount: amount, p_depositor: depositor || '' }),
     addFile: async (f, ids, up = {}) => {
