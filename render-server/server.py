@@ -116,6 +116,9 @@ def _sb_rpc(name: str, args: dict, token: str):
 
 
 def _service_headers():
+    # 새 방식 비밀 키(sb_secret_...)는 JWT 가 아니라서 apikey 헤더로만 보내요. 예전 service_role(eyJ...)은 둘 다.
+    if SERVICE_KEY.startswith("sb_"):
+        return {"apikey": SERVICE_KEY}
     return {"apikey": SERVICE_KEY, "Authorization": f"Bearer {SERVICE_KEY}"}
 
 
