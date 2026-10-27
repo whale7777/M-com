@@ -3,9 +3,9 @@
    - 설정 창을 따로 열지 않고, 자료를 연 화면에서 제목·가격·설명을 바로 수정해요.
    - 가격이 0이면 무료, 1 이상이면 프리미엄으로 자동 정해져요.
    ===================================================================== */
-import { $, $$, esc, num, toast, extractDriveId, MAX_UPLOAD_MB, fmtSize, safeColor, RENDER_URL, shrinkImage } from './util.js?v=20';
-import { S, subj, flatUnits, findUnit, can } from './state.js?v=20';
-import { DEFAULT_PRICE, LEVEL_PRICE } from './defaults.js?v=20';
+import { $, $$, esc, num, toast, extractDriveId, MAX_UPLOAD_MB, fmtSize, safeColor, RENDER_URL, shrinkImage, unzipImages } from './util.js?v=21';
+import { S, subj, flatUnits, findUnit, can } from './state.js?v=21';
+import { DEFAULT_PRICE, LEVEL_PRICE } from './defaults.js?v=21';
 
 export const MAX_PRICE = 1000000;
 const LV = ['', '기본', '표준', '심화'];
@@ -70,8 +70,8 @@ export function srcFieldsHTML(mainDefault = 'upload') {
       <input name="drive" data-for="drive" placeholder="https://drive.google.com/file/d/..../view">
       <input name="main_file" data-for="upload" type="file" accept="application/pdf,.pdf">
       <label class="jl" data-for="json">문제 JSON (.json)<input name="main_json" type="file" accept="application/json,.json"></label>
-      <label class="jl" data-for="json">그림·도표 이미지 (.png .jpg .jpeg .svg · 여러 개 선택 가능)<input name="main_imgs" type="file" accept="image/png,image/jpeg,.png,.jpg,.jpeg,.svg,image/svg+xml" multiple></label>
-      <small class="note" data-for="json">문제 PDF에는 문제만, <b>정답·해설은 아래 '해설 PDF'로 따로</b> 나가요(JSON에 들어 있는 정답·해설로 자동 생성). JSON 안에서 <code>"asset": "파일이름.png"</code> 로 이미지를 불러와요. 이미지는 올리기 전에 자동으로 가볍게 줄여요. 용량은 PDF의 1/10 수준이에요.</small>
+      <label class="jl" data-for="json">그림·도표 이미지 (.png .jpg .jpeg .svg 또는 <b>.zip</b> · 여러 개 선택 가능)<input name="main_imgs" type="file" accept="image/png,image/jpeg,.png,.jpg,.jpeg,.svg,.zip,image/svg+xml,application/zip" multiple></label>
+      <small class="note" data-for="json">문제 PDF에는 문제만, <b>정답·해설은 아래 '해설 PDF'로 따로</b> 나가요(JSON에 들어 있는 정답·해설로 자동 생성). JSON 안에서 <code>"asset": "파일이름.png"</code> 로 이미지를 불러와요. zip 으로 올리면 브라우저에서 자동으로 풀어 그림만 올리고 zip 은 버려요(서버에 안 남아요). 이미지는 올리기 전에 자동으로 가볍게 줄여요. 용량은 PDF의 1/10 수준이에요.</small>
       <small class="note" data-cur></small></fieldset>
     <fieldset class="src" data-kind="solution"><legend>📝 해설 PDF <small>(선택 · 구매하거나 받은 사람만 볼 수 있음)</small></legend>${seg('solution', N)}
       <input name="solution" data-for="drive" placeholder="https://drive.google.com/file/d/..../view">
@@ -109,7 +109,12 @@ const ASSET_RE = /^[A-Za-z0-9][A-Za-z0-9_.-]{0,59}\.(png|jpe?g|svg)$/i;
 // 민혁 JSON 읽기: JSON 문법 → 이미지 이름 → (변환 서버가 있으면) 서버 검사까지
 async function readJson(form, had) {
   const jf = form.elements.main_json.files[0];
-  const imgFiles = [...form.elements.main_imgs.files];
+  let imgFiles = [];
+  for (const f of form.elements.main_imgs.files) {
+    if (/\.zip$/i.test(f.name) || /zip/.test(f.type)) {
+      try { imgFiles.push(...await unzipImages(f)); } catch (e) { return { error: String(e.message || e) }; }   // zip 은 여기서 풀고 버려요 (서버에는 그림만 올라가요)
+    } else imgFiles.push(f);
+  }
   let existing = [];
   try { existing = JSON.parse(form.dataset.imgs || '[]'); } catch { /* 새 자료 */ }
   const images = [];
