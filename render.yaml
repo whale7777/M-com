@@ -1,0 +1,21 @@
+# Render.com "Blueprint": 이 저장소를 Render 에 연결하면 변환 서버 설정이 자동으로 채워져요.
+# (Render 대시보드 → New → Blueprint → whale7777/M-com 선택 → SUPABASE_SERVICE_KEY 한 칸만 붙여넣기)
+services:
+  - type: web
+    name: minhyeok-render
+    runtime: docker
+    dockerfilePath: ./render-server/Dockerfile
+    dockerContext: ./render-server
+    plan: free            # 판매 시작하면 starter 이상으로 올리세요 (무료는 잠들어서 첫 요청이 느려요)
+    healthCheckPath: /health
+    envVars:
+      - key: SUPABASE_URL
+        value: https://zzvmssovcmaovraebssk.supabase.co
+      - key: SUPABASE_ANON_KEY
+        value: sb_publishable_OD5J8kRqcpV_ehz_xXaSmA_abKZSzFt   # 공개돼도 되는 키 (config.js 와 같음)
+      - key: ALLOWED_ORIGINS
+        value: https://whale7777.github.io
+      - key: CACHE_MAX_MB
+        value: "300"
+      - key: SUPABASE_SERVICE_KEY
+        sync: false        # 비밀 키: Render 화면에서 직접 붙여넣기 (깃허브에 쓰면 안 돼요)
