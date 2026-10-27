@@ -1,6 +1,6 @@
-import { $, $$, esc, clone, uid, safeColor, fmtDate, fmtDT, num, ID_RE, toast, extractDriveId, saveBlob, move, DAY, MAX_UPLOAD_MB, fmtSize, STORAGE_QUOTA_MB, RENDER_URL } from './util.js?v=23';
-import { S, subj, unitOf, created, flatUnits, unitIds, can, ROLES } from './state.js?v=23';
-import { DEFAULT_MENU } from './defaults.js?v=23';
+import { $, $$, esc, clone, uid, safeColor, fmtDate, fmtDT, num, ID_RE, toast, extractDriveId, saveBlob, move, DAY, MAX_UPLOAD_MB, fmtSize, STORAGE_QUOTA_MB, RENDER_URL } from './util.js?v=24';
+import { S, subj, unitOf, created, flatUnits, unitIds, can, ROLES } from './state.js?v=24';
+import { DEFAULT_MENU } from './defaults.js?v=24';
 
 let editId = null, taxDraft = null, taxDirty = false, bannerDraft = null, bannerDirty = false, menuDraft = null, menuDirty = false;
 let passCache = [], pointsCache = [], chargesCache = [], ledgerCache = [];
@@ -52,6 +52,7 @@ function switchTab(id) {
   if (id === 'tabPoints') refreshPoints().then(renderAdminPoints);
   if (id === 'tabStaff') refreshStaff().then(renderStaff);
   if (id === 'tabStorage') renderStorage();
+  if (id === 'tabMembers') renderMembers();
 }
 
 /* ---- 대시보드 ---- */
@@ -439,7 +440,7 @@ function parsePlans(text) {
 function fillSiteForm() {
   const f = $('#formSite').elements;
   f.noticeOn.checked = !!S.site.noticeOn;
-  f.autoApprove.checked = S.site.autoApprove !== false;
+  f.needApproval.checked = S.site.autoApprove !== true; // 기본값: 승인 필요
   f.notice.value = S.site.notice || '';
   f.heroSub.value = S.site.heroSub || '';
   f.contact.value = S.site.contact || '';
@@ -457,7 +458,7 @@ async function submitSite(e) {
   const plans = parsePlans(f.passPlans.value);
   if (f.passPlans.value.trim() && !plans.length) return toast('M패스 플랜 형식을 확인해줘 (예: p45 | 45일 | 45 | 15 | 3900)');
   const next = {
-    ...S.site, passPlans: plans.length ? plans : S.site.passPlans, noticeOn: f.noticeOn.checked, autoApprove: f.autoApprove.checked, notice: f.notice.value.trim(), heroSub: f.heroSub.value.trim(),
+    ...S.site, passPlans: plans.length ? plans : S.site.passPlans, noticeOn: f.noticeOn.checked, autoApprove: !f.needApproval.checked, notice: f.notice.value.trim(), heroSub: f.heroSub.value.trim(),
     contact: f.contact.value.trim(), passInfo: f.passInfo.value.trim(), chargeInfo: f.chargeInfo.value.trim(), about: f.about.value.trim(), packs,
   };
   try { await S.api.saveSite(next); S.site = next; await S.hooks.route(); toast('설정 저장 완료 ✨'); }
@@ -541,6 +542,7 @@ export function bindAdmin() {
 export async function adminClick(e, t) {
   const d = t.dataset;
   if (d.tab) { switchTab(d.tab); return true; }
+  if (d.mstat !== undefined) { await memberStatus(d.mstat); return true; }
   if (d.pq !== undefined) { await addQuota(d.pq, Number(d.n) || 10); return true; }
   if (d.fpin !== undefined) {
     const f = S.files.find((x) => x.id === d.fpin);
@@ -662,4 +664,26 @@ async function renderStorage() {
       <tr><td>${esc(r.title || '(삭제된 자료)')}</td><td>${r.json ? 'JSON' : 'PDF'}</td><td>${fmtBytes(Number(r.bytes))}</td><td>${fmtDT(r.at)}</td></tr>`).join('') || '<tr><td colspan="4">아직 업로드한 자료가 없어요.</td></tr>'}</tbody></table>
     <p class="note">※ 사용량은 Supabase 스토리지에서 실제로 읽어온 값이에요(모든 보관함 합계). 다만 <b>총 용량(한도)은 Supabase 가 알려주지 않아서</b> 직접 정한 값이에요 — 기준 용량은 <code>config.js</code> 의 <code>STORAGE_QUOTA_MB</code>(지금 ${STORAGE_QUOTA_MB}MB, 무료 플랜 1GB). 데이터베이스는 따로 ${fmtBytes(Number(st.db_bytes) || 0)} 쓰는 중(무료 500MB).
     ${RENDER_URL ? (st.render ? `<br>변환 서버 캐시: ${fmtBytes(st.render.bytes)} / ${fmtBytes(st.render.limit_bytes)} (${st.render.files}개 · 넘으면 오래된 것부터 자동 삭제, 서버 디스크이고 Supabase 용량과 무관)` : '<br>변환 서버 캐시 정보를 못 가져왔어요. (서버가 잠들어 있을 수 있어요)') : ''}</p>`;
+}
+
+/* ---- v12: 가입 승인 ---- */
+async function renderMembers() {
+  const box = $('#memberList');
+  let m;
+  try { m = await S.api.listMembers(); }
+  catch (err) { console.error(err); box.innerHTML = '<p class="note">목록을 불러오지 못했어요.</p>'; return; }
+  const row = (x, btns) => `<div class="item"><div><b>${esc(x.nick || x.username)}</b> <small>${x.nick ? '(' + esc(x.username) + ') · ' : ''}${fmtDT(x.at)}</small></div><div class="item-btns">${btns}</div></div>`;
+  const ok = (x) => `<button class="btn sm primary" data-mstat="${esc(x.id)}|approved" type="button">승인</button>`;
+  const no = (x) => `<button class="btn sm" data-mstat="${esc(x.id)}|rejected" type="button">거절</button>`;
+  box.innerHTML = `<h4>승인 대기 (${m.pending.length})</h4>${m.pending.length ? m.pending.map((x) => row(x, ok(x) + no(x))).join('') : '<p class="note">대기 중인 가입 신청이 없어요.</p>'}
+    <h4>거절 · 사용 중지 (${m.rejected.length})</h4>${m.rejected.length ? m.rejected.map((x) => row(x, ok(x).replace('승인', '다시 승인'))).join('') : '<p class="note">없어요.</p>'}`;
+}
+export async function memberStatus(v) {
+  const [id, status] = v.split('|');
+  if (status === 'rejected' && !confirm('이 가입을 거절(사용 중지)할까?')) return;
+  try {
+    const r = await S.api.setMemberStatus(id, status);
+    toast(r ? (status === 'approved' ? '승인했어 ✅' : '거절했어') : '처리하지 못했어 (권한 확인)');
+  } catch (err) { console.error(err); toast(FAIL); }
+  renderMembers();
 }

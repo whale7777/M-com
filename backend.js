@@ -1,5 +1,5 @@
-import { DAY, clone, fmtDate, driveDownloadUrl, drivePreviewUrl, RENDER_URL, STORAGE_QUOTA_MB } from './util.js?v=23';
-import { DEFAULT_TAX, DEFAULT_SITE, buildPrem } from './defaults.js?v=23';
+import { DAY, clone, fmtDate, driveDownloadUrl, drivePreviewUrl, RENDER_URL, STORAGE_QUOTA_MB } from './util.js?v=24';
+import { DEFAULT_TAX, DEFAULT_SITE, buildPrem } from './defaults.js?v=24';
 
 const must = ({ data, error }) => { if (error) throw error; return data; };
 
@@ -60,7 +60,9 @@ export function demoBackend(flags = {}) {
   const listeners = [];
   let cur = null;
   const find = (id) => files.find((f) => f.id === id);
-  const user = (id) => ({ id: 'u_' + id, username: id, role: 'student', status: 'approved' });
+  const nicks = {}; // 데모 별명 { 아이디: {nick, locked} }
+  const mstat = { newbie01: 'pending', oldbie02: 'rejected' };
+  const user = (id, status = 'approved') => ({ id: 'u_' + id, username: id, role: 'student', status: mstat[id] || status, nick: nicks[id]?.nick || '', nickLocked: !!nicks[id]?.locked });
   const emit = (u) => { cur = u; listeners.forEach((l) => l(u)); };
   const log = (username, delta, kind, memo, fileId) => {
     ledger.unshift({ id: lid++, username, delta, balance_after: pts[username] || 0, kind, memo, at: Date.now(), fileId: fileId || null });
@@ -68,7 +70,22 @@ export function demoBackend(flags = {}) {
   return {
     onAuth: (cb) => { listeners.push(cb); cb(null); },
     login: async (id) => emit(user(id)),
-    signup: async (id) => emit(user(id)),
+    signup: async (id, pw, nick) => {
+      if (nick) nicks[id] = { nick, locked: false };
+      emit(user(id, meta.site.autoApprove === true ? 'approved' : 'pending'));
+    },
+    nickAvailable: async (n) => (Object.values(nicks).some((x) => x.nick.toLowerCase() === String(n).toLowerCase()) ? 'taken' : 'ok'),
+    setNick: async (n) => {
+      if (!cur) return 'login';
+      if (nicks[cur.username]?.locked) return 'locked';
+      if (n) nicks[cur.username] = { nick: n, locked: false }; else delete nicks[cur.username];
+      return 'ok';
+    },
+    listMembers: async () => ({
+      pending: Object.entries(mstat).filter(([, s]) => s === 'pending').map(([u]) => ({ id: 'u_' + u, username: u, nick: nicks[u]?.nick || '', at: now - 3600e3 })),
+      rejected: Object.entries(mstat).filter(([, s]) => s === 'rejected').map(([u]) => ({ id: 'u_' + u, username: u, nick: '', at: now - 9 * DAY })),
+    }),
+    setMemberStatus: async (id, status) => { mstat[id.replace(/^u_/, '')] = status; return true; },
     logout: async () => emit(null),
     loadMeta: async () => clone(meta),
     saveTax: async (t) => { meta.tax = clone(t); },
@@ -243,7 +260,12 @@ export function supabaseBackend(sb) {
     const uid = session.user.id;
     try {
       const { data } = await sb.from('profiles').select('id,username,role,status').eq('id', uid).maybeSingle();
-      if (data) return { id: uid, username: data.username, role: data.role, status: data.status };
+      let nick = '', nickLocked = false;
+      try { // 별명 (v12 SQL 전이면 조용히 없음). 관리자가 정해준 별명(set_by 가 내가 아님)은 잠겨요
+        const n = await sb.from('nicknames').select('nickname,set_by').eq('user_id', uid).maybeSingle();
+        if (n.data) { nick = n.data.nickname || ''; nickLocked = n.data.set_by !== uid; }
+      } catch { /* 무시 */ }
+      if (data) return { id: uid, username: data.username, role: data.role, status: data.status, nick, nickLocked };
     } catch { /* 아래 기본값 사용 */ }
     return { id: uid, username: session.user.user_metadata?.username || '회원', role: 'student', status: 'pending' };
   };
@@ -309,8 +331,22 @@ export function supabaseBackend(sb) {
       const { error } = await sb.auth.signInWithPassword({ email: emailOf(id), password: pw });
       if (error) throw new Error('ID 또는 비밀번호가 맞지 않아요');
     },
-    signup: async (id, pw) => {
-      const { error } = await sb.auth.signUp({ email: emailOf(id), password: pw, options: { data: { username: id.toLowerCase(), src: 'mcom' } } });
+    nickAvailable: async (n) => { const r = await sb.rpc('nickname_available', { p_nick: n }); return r.error ? 'ok' : r.data; }, // SQL 전이면 통과
+    setNick: (n) => rpc('nickname_set_self', { p_nick: n }),
+    listMembers: async () => {
+      const p = must(await sb.from('profiles').select('id,username,status,created_at').in('status', ['pending', 'rejected']).order('created_at', { ascending: false }));
+      const nk = {};
+      try { (must(await sb.from('nicknames').select('user_id,nickname')) || []).forEach((r) => { nk[r.user_id] = r.nickname; }); } catch { /* 무시 */ }
+      const f = (x) => ({ id: x.id, username: x.username, nick: nk[x.id] || '', at: Date.parse(x.created_at) || 0 });
+      return { pending: p.filter((x) => x.status === 'pending').map(f), rejected: p.filter((x) => x.status === 'rejected').map(f) };
+    },
+    setMemberStatus: async (id, status) => {
+      const { data, error } = await sb.from('profiles').update({ status }).eq('id', id).select('id');
+      if (error) throw error;
+      return !!(data && data.length);
+    },
+    signup: async (id, pw, nick) => {
+      const { error } = await sb.auth.signUp({ email: emailOf(id), password: pw, options: { data: { username: id.toLowerCase(), src: 'mcom', nickname: nick || '' } } });
       if (error) throw new Error(/registered|already|exists/i.test(error.message) ? '이미 있는 ID예요' : '가입에 실패했어요: ' + error.message);
     },
     logout: () => sb.auth.signOut(),

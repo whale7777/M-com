@@ -8,10 +8,11 @@
 <meta name="description" content="물리·화학·생물·지구과학 엄선 문제 PDF">
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.min.css">
 <style>.drawer{position:fixed;top:0;bottom:0;left:0;width:300px;max-width:84vw;transform:translateX(-102%);visibility:hidden;background:#fff;z-index:100}.drawer.open{transform:none;visibility:visible}.drawer-bg{position:fixed;inset:0;visibility:hidden;z-index:90}.drawer-bg.open{visibility:visible}</style>
-<link rel="stylesheet" href="style.css?v=23">
+<link rel="stylesheet" href="style.css?v=24">
 </head>
 <body>
 <div id="notice" class="notice hidden"></div>
+<div id="pendBar" class="pend-bar hidden">⏳ 관리자 승인을 기다리는 중이에요. 승인되면 다운로드·구매를 할 수 있어요.</div>
 
 <header class="top">
   <div class="wrap top-in">
@@ -92,6 +93,7 @@
   <form id="formAuth" class="form">
     <p class="note" style="margin-top:0">PyNest에서 쓰는 <b>ID와 비밀번호 그대로</b> 로그인하면 돼요.</p>
     <label>ID<input id="authId" autocomplete="username" autocapitalize="none" placeholder="영문 소문자·숫자·_ (3~20자)" required></label>
+    <label id="authNickWrap" class="hidden">별명 <small>(사이트에 보여요 · 1~20자)</small><input id="authNick" maxlength="20" autocomplete="nickname" placeholder="한글·영문·숫자"></label>
     <label>비밀번호<input id="authPw" type="password" autocomplete="current-password" placeholder="6자 이상" required></label>
     <label id="authPw2Wrap" class="hidden">비밀번호 확인<input id="authPw2" type="password" autocomplete="new-password"></label>
     <p id="authSignupNote" class="note hidden">PyNest와 같은 계정이 만들어져요. 가입해도 PyNest 강의 사이트는 선생님이 승인해야 쓸 수 있어요.</p>
@@ -115,6 +117,7 @@
     <button class="tab" data-tab="tabMenu" data-perm="@admin" type="button">메뉴</button>
     <button class="tab" data-tab="tabStorage" data-perm="@admin" type="button">💾 저장공간</button>
     <button class="tab" data-tab="tabSite" data-perm="@admin" type="button">사이트 설정</button>
+    <button class="tab" data-tab="tabMembers" data-perm="members" type="button">🙋 가입 승인</button>
     <button class="tab" data-tab="tabStaff" data-perm="roles_basic" type="button">👥 권한</button>
   </div>
 
@@ -208,6 +211,11 @@
     </div>
   </div>
 
+  <div id="tabMembers" class="tabpane hidden">
+    <p class="note">가입 승인은 민혁닷컴과 PyNest 가 <b>같이</b> 써요. 승인 전 회원은 다운로드·구매를 못 해요. (끄고 켜는 건 <b>사이트 설정</b> 탭)</p>
+    <div id="memberList" class="list"><p class="note">불러오는 중…</p></div>
+  </div>
+
   <div id="tabStaff" class="tabpane hidden">
     <p class="note">민혁닷컴과 PyNest 가 <b>같은 권한</b>을 써요. 여기서 정하면 두 사이트에 모두 적용돼요. (가입된 PyNest ID 만 가능)</p>
     <div class="role-help">
@@ -230,7 +238,7 @@
 
   <div id="tabSite" class="tabpane hidden">
     <form id="formSite" class="form card-form">
-      <label class="check"><input type="checkbox" name="autoApprove"> 민혁닷컴에서 가입한 사람은 PyNest 도 바로 사용 가능 (PyNest 자동 승인) — ⚠️ 끄면 PyNest 는 선생님이 승인해야 해요</label>
+      <label class="check"><input type="checkbox" name="needApproval"> <b>신규 가입은 관리자 승인 필요</b> — 켜면 승인 전엔 다운로드·구매가 안 돼요 (민혁닷컴·PyNest 공통). 끄면 가입 즉시 사용해요</label>
       <label class="check"><input type="checkbox" name="noticeOn"> 상단 띠 공지 표시</label>
       <label>상단 띠 공지 내용 (모든 페이지 맨 위에 한 줄로 떠요 — 긴 공지는 📢 공지사항 메뉴에서 쓰세요)<textarea name="notice" rows="2" placeholder="예) 11월 모의고사 세트 업로드 완료!"></textarea></label>
       <label>메인 소개 문구<input name="heroSub"></label>
@@ -251,6 +259,6 @@
 </dialog>
 
 <div id="toast" class="toast"></div>
-<script type="module" src="app.js?v=23"></script>
+<script type="module" src="app.js?v=24"></script>
 </body>
 </html>

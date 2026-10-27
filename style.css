@@ -461,3 +461,6 @@ textarea.ed-in{width:100%;resize:vertical}
 .btn.done:hover{background:#e3e6ee;border-color:#c9cedb;color:#5b6479}
 .b-note.exp{color:#b45309;font-weight:700}
 .exp-t{color:#d9480f}
+/* v12: 승인 대기 띠 · 별명 입력 */
+.pend-bar{background:#fff4e0;color:#8a5200;text-align:center;font-weight:700;font-size:.86rem;padding:8px 12px;border-bottom:1px solid #ffd99a}
+.nick-box{display:flex;gap:8px;max-width:420px}.nick-box input{flex:1;min-width:0}

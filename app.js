@@ -1,11 +1,11 @@
-import { CONFIG } from './config.js?v=23';
-import { $, $$, esc, clone, safeColor, safeLink, num, fmtDT, fmtDate, richText, ID_RE, toast, triggerDownload, DAY, PYNEST_URL } from './util.js?v=23';
-import { DEFAULT_TAX, DEFAULT_SITE, DEFAULT_MENU, DEFAULT_PLANS, DEFAULT_BANNERS } from './defaults.js?v=23';
-import { demoBackend, supabaseBackend } from './backend.js?v=23';
-import { S, subj, unitOf, findUnit, unitPath, unitIds, flatUnits, created, isNew, visibleFiles, unlocked, canMain, canSol, buyable, claimable, hasPreview, can, roleBadge, hasDl, dlKey, daysLeft, isExpired, loadLocalDl, saveLocalDl } from './state.js?v=23';
-import { bindAdmin, openAdmin, adminClick } from './admin.js?v=23';
-import { B, barHTML, syncSel, bulkClick, bindBulk } from './bulk.js?v=23';
-import { pencil, startEdit, cancelEdit, commitEdit, newPageHTML, afterNewPage, filePanelHTML, openFilePanel, bindEditor } from './editor.js?v=23';
+import { CONFIG } from './config.js?v=24';
+import { $, $$, esc, clone, safeColor, safeLink, num, fmtDT, fmtDate, richText, ID_RE, toast, triggerDownload, DAY, PYNEST_URL } from './util.js?v=24';
+import { DEFAULT_TAX, DEFAULT_SITE, DEFAULT_MENU, DEFAULT_PLANS, DEFAULT_BANNERS } from './defaults.js?v=24';
+import { demoBackend, supabaseBackend } from './backend.js?v=24';
+import { S, subj, unitOf, findUnit, unitPath, unitIds, flatUnits, created, isNew, visibleFiles, unlocked, canMain, canSol, buyable, claimable, hasPreview, can, roleBadge, hasDl, dlKey, daysLeft, isExpired, loadLocalDl, saveLocalDl } from './state.js?v=24';
+import { bindAdmin, openAdmin, adminClick } from './admin.js?v=24';
+import { B, barHTML, syncSel, bulkClick, bindBulk } from './bulk.js?v=24';
+import { pencil, startEdit, cancelEdit, commitEdit, newPageHTML, afterNewPage, filePanelHTML, openFilePanel, bindEditor } from './editor.js?v=24';
 
 S.DEMO = !CONFIG.SUPABASE_URL || /여기에/.test(CONFIG.SUPABASE_URL) || new URLSearchParams(location.search).has('demo');
 const demoFlags = {};
@@ -24,14 +24,17 @@ const linkAttrs = (u) => { const l = safeLink(u); return /^https?:/.test(l) ? `h
 /* =====================================================================
    공통 조각 (헤더 · 카테고리 · 푸터)
    ===================================================================== */
+const dispName = (u) => (u && (u.nick || u.username)) || '';
+const isPending = () => !!S.user && S.user.status === 'pending';
 function renderHeader() {
+  $('#pendBar')?.classList.toggle('hidden', !isPending());
   $('#btnLogin').classList.toggle('hidden', !!S.user);
   $('#btnLogout').classList.toggle('hidden', !S.user);
   $('#btnAdmin').classList.toggle('hidden', !S.role);
   const chip = $('#userChip');
   chip.classList.toggle('hidden', !S.user);
   if (S.user) {
-    chip.innerHTML = `<span class="un">${esc(S.user.username)}</span>` +
+    chip.innerHTML = `<span class="un">${esc(dispName(S.user))}</span>` +
       (S.role ? roleBadge() : S.hasPass ? '<i class="badge m">M PASS</i>' : '') +
       `<b class="pts">🪙 ${num(S.points)} P</b>`;
   }
@@ -39,7 +42,7 @@ function renderHeader() {
 }
 function renderDrawerUser() {
   $('#drUser').innerHTML = S.user
-    ? `<div class="dr-who"><b>${esc(S.user.username)}</b>${S.role ? roleBadge() : S.hasPass ? '<i class="badge m">M PASS</i>' : ''}</div>
+    ? `<div class="dr-who"><b>${esc(dispName(S.user))}</b>${S.role ? roleBadge() : S.hasPass ? '<i class="badge m">M PASS</i>' : ''}</div>
        <div class="dr-pts"><span>🪙 ${num(S.points)} P</span><a href="#/points">충전</a></div>
        <button class="btn ghost sm" data-act="logout" type="button">로그아웃</button>`
     : `<button class="btn primary block" data-act="login" type="button">로그인</button>${CONFIG.ALLOW_SIGNUP ? '<button class="btn ghost block" data-act="signup" type="button">회원가입</button>' : ''}`;
@@ -484,6 +487,17 @@ const expTag = (p) => {
   const left = Math.ceil((p.expiresAt - Date.now()) / 86400000);
   return left <= 0 ? '<b class="exp-t">만료됨</b>' : `<b class="${left <= 5 ? 'exp-t' : ''}">${left}일 남음</b> (${fmtDate(new Date(p.expiresAt))}까지)`;
 };
+async function saveNick() {
+  const nick = ($('#nickInput').value || '').trim().replace(/\s+/g, ' ');
+  if (nick && !NICK_RE.test(nick)) return toast(NICK_MSG.invalid);
+  try {
+    const r = await S.api.setNick(nick);
+    if (r !== 'ok') return toast(NICK_MSG[r] || '저장하지 못했어요');
+    S.user.nick = nick; S.user.nickLocked = false;
+    toast(nick ? '별명을 저장했어 ✨' : '별명을 지웠어');
+    renderHeader(); await route();
+  } catch (err) { console.error(err); toast('저장 중 오류가 났어요 (v12 SQL 확인)'); }
+}
 async function meHTML() {
   document.title = '내 정보 — 민혁닷컴';
   if (!S.user) return loginPrompt('내 포인트와 구매한 자료는 로그인 후 볼 수 있어요.');
@@ -492,10 +506,14 @@ async function meHTML() {
   const mine = pu.map((p) => ({ p, f: S.files.find((x) => x.id === p.fileId) })).filter((x) => x.f);
   return `<div class="page-h"><h1>내 정보</h1></div>
   <div class="me-top">
-    <div class="me-card"><span>아이디</span><b>${esc(S.user.username)}</b>${S.role ? roleBadge() : S.pass.active ? '<i class="badge m">M PASS</i>' : '<small>M패스 없음</small>'}</div>
+    <div class="me-card"><span>아이디</span><b>${esc(S.user.username)}</b>${S.user.nick ? `<small>별명: ${esc(S.user.nick)}</small>` : ''}${S.role ? roleBadge() : S.pass.active ? '<i class="badge m">M PASS</i>' : '<small>M패스 없음</small>'}</div>
     <div class="me-card"><span>M패스</span>${S.pass.active ? `<b>👑 ${esc(S.pass.plan || '이용중')}</b><small>남은 ${num(S.pass.left)}건 / 총 ${num(S.pass.quota)}건 · ${esc(S.pass.expires || '무기한')}까지</small>` : '<small>없음</small><a class="btn sm ghost" href="#/pass">보러가기</a>'}</div>
     <div class="me-card pts"><span>내 M포인트</span><b>🪙 ${num(S.points)} P</b><a class="btn sm primary" href="#/points">충전하기</a></div>
   </div>
+  <section class="blk"><div class="blk-h"><h2>별명</h2></div>
+    <div class="nick-box"><input id="nickInput" maxlength="20" value="${esc(S.user.nick || '')}" placeholder="한글·영문·숫자 1~20자" ${S.user.nickLocked ? 'disabled' : ''}>
+      <button class="btn sm primary" data-act="savenick" type="button" ${S.user.nickLocked ? 'disabled' : ''}>저장</button></div>
+    <p class="note">${S.user.nickLocked ? '🔒 관리자가 정해준 별명이라 바꿀 수 없어요.' : '사이트에 표시되는 이름이에요. 비우고 저장하면 별명이 없어져요.'}</p></section>
   <section class="blk"><div class="blk-h"><h2>내 자료 <small>${mine.length}개 (구매 + M패스 · 받은 날부터 30일)</small></h2></div>
     ${mine.length ? `<div class="rows">${mine.map(({ p, f }) => `<div class="row-item"><a class="ri-t" href="#/f/${encodeURIComponent(f.id)}">${esc(f.title)}</a>
       <small>${p.price > 0 ? num(p.price) + 'P 구매' : 'M패스로 받음'} · ${fmtDT(p.at)} · ${expTag(p)}</small>
@@ -671,6 +689,7 @@ async function loadNotices() {
 async function download(id, kind) {
   const f = S.files.find((x) => x.id === id);
   if (!f) return;
+  if (isPending()) return toast('관리자 승인을 기다리는 중이라 아직 다운로드할 수 없어요 ⏳');
   if (kind === 'solution' ? !canSol(f) : !canMain(f)) return toast('이 자료는 구매하거나 M패스로 받아야 다운로드할 수 있어요');
   const isJson = (kind === 'solution' ? f.solutionSrc : f.mainSrc) === 'json';
   try {
@@ -715,6 +734,7 @@ async function adminQuick(act, id) {
 let buyCtx = null; // { mode: 'buy' | 'claim' | 'pass', id }
 function openBuy(id, mode = 'buy') {
   if (!S.user) { toast('먼저 로그인해줘'); return openAuth('login'); }
+  if (isPending()) return toast('관리자 승인을 기다리는 중이라 아직 구매할 수 없어요 ⏳');
   const dlg = $('#dlgBuy');
   if (mode === 'pass') {
     const pl = (S.site.passPlans || []).find((x) => x.id === id);
@@ -761,7 +781,7 @@ async function confirmBuy() {
   btn.disabled = true;
   try {
     const r = await (mode === 'pass' ? S.api.buyPass(id) : mode === 'claim' ? S.api.claimFile(id) : S.api.buyFile(id));
-    const common = { login: '로그인이 필요해요', blocked: '사용이 중지된 계정이에요', not_found: mode === 'pass' ? '판매 중인 패스가 아니에요' : '자료를 찾을 수 없어요' };
+    const common = { login: '로그인이 필요해요', blocked: '사용이 중지된 계정이에요', not_found: mode === 'pass' ? '판매 중인 패스가 아니에요' : '자료를 찾을 수 없어요', pending: '관리자 승인을 기다리는 중이에요 ⏳' };
     const msg = ({
       buy: { ok: '구매 완료! 🎉 이제 다운로드할 수 있어요', already: '이미 이용할 수 있는 자료예요', insufficient: '포인트가 부족해요', not_for_sale: '포인트로 판매하지 않는 자료예요' },
       claim: { ok: '받았어요! 🎉 이제 다운로드할 수 있어요', already: '이미 받은 자료예요', free: '무료 자료라 바로 받을 수 있어요', no_pass: '유효한 M패스가 없어요', no_quota: 'M패스 남은 건수가 없어요' },
@@ -787,10 +807,11 @@ function renderAuthTab() {
     b.classList.toggle('hidden', b.dataset.at === 'signup' && !CONFIG.ALLOW_SIGNUP);
   });
   $('#authPw2Wrap').classList.toggle('hidden', !signup);
+  $('#authNickWrap').classList.toggle('hidden', !signup);
   $('#authSignupNote').classList.toggle('hidden', !signup);
-  $('#authSignupNote').textContent = S.site.autoApprove !== false
+  $('#authSignupNote').textContent = S.site.autoApprove === true
     ? 'PyNest와 같은 계정이에요. 가입하면 PyNest에서도 같은 ID·비밀번호로 바로 로그인할 수 있어요.'
-    : 'PyNest와 같은 계정이 만들어져요. 가입해도 PyNest 강의 사이트는 선생님이 승인해야 쓸 수 있어요.';
+    : 'PyNest와 같은 계정이 만들어져요. 가입 뒤 관리자가 승인해야 다운로드·구매를 할 수 있어요 (PyNest 도 마찬가지).';
   $('#authSubmit').textContent = signup ? '가입하기' : '로그인';
   $('#authPw').setAttribute('autocomplete', signup ? 'new-password' : 'current-password');
 }
@@ -799,6 +820,8 @@ function openAuth(tab = 'login') {
   renderAuthTab();
   $('#dlgAuth').showModal();
 }
+const NICK_RE = /^[0-9A-Za-z가-힣ㄱ-ㅎㅏ-ㅣ _.-]{1,20}$/;
+const NICK_MSG = { invalid: '별명은 한글·영문·숫자·공백·_ . - 로 1~20자예요', reserved: '운영진처럼 보이는 별명은 쓸 수 없어요', taken: '이미 쓰고 있는 별명이거나 다른 사람의 ID예요', locked: '관리자가 정해준 별명이라 바꿀 수 없어요', login: '로그인이 필요해요' };
 async function submitAuth(e) {
   e.preventDefault();
   const id = $('#authId').value.trim().toLowerCase();
@@ -808,14 +831,18 @@ async function submitAuth(e) {
     if (!ID_RE.test(id)) return toast('ID는 영문 소문자, 숫자, _ 로 3~20자예요');
     if (pw.length < 6) return toast('비밀번호는 6자 이상이어야 해요');
     if (pw !== $('#authPw2').value) return toast('비밀번호 확인이 달라요');
+    var nick = $('#authNick').value.trim().replace(/\s+/g, ' ');
+    if (!NICK_RE.test(nick)) return toast('별명은 한글·영문·숫자·공백·_ . - 로 1~20자로 적어줘');
+    const av = await S.api.nickAvailable(nick);
+    if (av !== 'ok') return toast(NICK_MSG[av] || '쓸 수 없는 별명이에요');
   }
   const btn = $('#authSubmit');
   btn.disabled = true;
   try {
-    await (signup ? S.api.signup(id, pw) : S.api.login(id, pw));
+    await (signup ? S.api.signup(id, pw, nick) : S.api.login(id, pw));
     $('#dlgAuth').close();
     $('#formAuth').reset();
-    toast(signup ? '가입 완료! 환영해 🎉' : '로그인 완료!');
+    toast(signup ? (S.site.autoApprove === true ? '가입 완료! 환영해 🎉' : '가입 완료! 관리자가 승인하면 다운로드·구매를 할 수 있어요 ⏳') : '로그인 완료!');
   } catch (err) { toast(err.message || '실패했어요'); }
   finally { btn.disabled = false; }
 }
@@ -916,6 +943,7 @@ function bind() {
     if (d.act === 'notice-new') return openNoticeForm(null);
     if (d.act === 'notice-edit') return openNoticeForm(d.id);
     if (d.act === 'notice-del') return deleteNotice(d.id);
+    if (d.act === 'savenick') return saveNick();
     if (d.act === 'logout') { closeDrawer(); return S.api.logout(); }
     if (d.act === 'login') { closeDrawer(); return openAuth('login'); }
     if (d.act === 'signup') { closeDrawer(); return openAuth('signup'); }
@@ -1010,6 +1038,9 @@ S.hooks.refreshUser = refreshUserState;
       const i = S.site.menu.findIndex((x) => x.link === '#/');
       S.site.menu.splice(i + 1, 0, clone(DEFAULT_MENU.find((x) => x.id === 'm_notice')));
     }
+    // DB 에 저장돼 있던 예전 문구("계속 받을 수 있어요")를 30일 만료 문구로 바꿔줘요
+    (S.site.banners || []).forEach((b) => { if (b.id === 'b_point' && /계속/.test(b.sub || '')) b.sub = DEFAULT_BANNERS.find((x) => x.id === 'b_point').sub; });
+    if (/계속 다시 받을 수 있어요/.test(S.site.passInfo || '')) S.site.passInfo = DEFAULT_SITE.passInfo;
     // 예전 M패스 배너 문구("무제한")는 새 건수제 문구로 바꿔줘요
     (S.site.banners || []).forEach((b) => { if (b.id === 'b_pass' && /무제한/.test(b.title || '')) { const nb = DEFAULT_BANNERS.find((x) => x.id === 'b_pass'); b.title = nb.title; b.sub = nb.sub; } });
     if (!Array.isArray(S.site.passPlans) || !S.site.passPlans.length) S.site.passPlans = clone(DEFAULT_PLANS);

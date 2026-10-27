@@ -1,4 +1,4 @@
-import { CONFIG } from './config.js?v=23';
+import { CONFIG } from './config.js?v=24';
 
 // 처음 한 번만 쓰이는 기본 과목·단원. 관리자 패널에서 마음대로 바꿀 수 있어.
 export const DEFAULT_TAX = [
@@ -56,7 +56,7 @@ export const LEVEL_PRICE = { 1: 1500, 2: 1800, 3: 2200 };
 
 export const DEFAULT_SITE = {
   noticeOn: false,
-    autoApprove: true, // 민혁닷컴에서 가입하면 PyNest 도 바로 쓸 수 있게 자동 승인
+    autoApprove: false, // false = 신규 가입은 관리자 승인 필요 (true 면 가입 즉시 승인)
   notice: '',
   heroSub: '과목별로 엄선한 10~15문항 세트. 무료 자료는 누구나, 프리미엄은 1,500P부터 낱개로, 또는 M패스로 더 저렴하게.',
   contact: CONFIG.CONTACT || '',
