@@ -60,6 +60,7 @@ RENDER_TIMEOUT_S = int(os.environ.get("RENDER_TIMEOUT_S", "90"))
 RENDERER_VERSION = "mhq1-r1"                                   # 렌더러/디자인을 바꾸면 올려서 캐시를 무효화
 PROTECT = os.environ.get("PDF_PROTECT", "1").strip() != "0"            # 받는 사람 워터마크 + 복사·수정 차단 (기본 켜짐)
 ALLOW_PRINT = os.environ.get("PDF_ALLOW_PRINT", "1").strip() != "0"    # 인쇄 허용 (기본 허용, 0 이면 인쇄도 막아요)
+WATERMARK = os.environ.get("PDF_WATERMARK", "0").strip() == "1"        # 눈에 보이는 워터마크 (기본 꺼짐, 1 이면 켬)
 RATE_PER_10MIN = int(os.environ.get("PDF_RATE_PER_10MIN", "40"))       # 한 사람이 10분에 받을 수 있는 PDF 수 (0 이면 제한 없음)
 KST = timezone(timedelta(hours=9))
 
@@ -221,6 +222,7 @@ def _protect(body: bytes, fid: str, user: dict | None, meta_title: str) -> bytes
         return secure_pdf.protect(
             body, label=f"{name} · {day}", footer=f"{name} · {day} · ID {code} · 민혁닷컴",
             title=meta_title or "민혁닷컴 문제지", allow_print=ALLOW_PRINT, code=code,
+            watermark=WATERMARK,
         )
     except Exception:  # noqa: BLE001
         app.logger.exception("pdf protect failed")
@@ -391,7 +393,7 @@ def fname_for(meta_title: str, kind: str) -> str:
 # --------------------------------------------------------------------------
 @app.get("/health")
 def health():
-    return jsonify({"ok": True, "version": RENDERER_VERSION, "configured": bool(SUPABASE_URL and ANON_KEY and SERVICE_KEY), "protect": PROTECT})
+    return jsonify({"ok": True, "version": RENDERER_VERSION, "configured": bool(SUPABASE_URL and ANON_KEY and SERVICE_KEY), "protect": PROTECT, "watermark": WATERMARK})
 
 
 @app.get("/pdf/<fid>")

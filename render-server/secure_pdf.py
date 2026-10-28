@@ -105,22 +105,23 @@ def protect(
     title: str = "",
     allow_print: bool = True,
     code: str = "",
+    watermark: bool = True,
 ) -> bytes:
-    font = pick_font()
-    if font == "Helvetica" and any(ord(ch) > 127 for ch in label + footer):
-        log.warning("한글 글꼴을 못 찾아서 워터마크의 한글이 '?' 로 나가요. fonts-nanum 을 설치하거나 PDF_FONT 를 지정하세요.")
-    label = _clean(label, font)
-    footer = _clean(footer or label, font, 140)
-
     reader = PdfReader(io.BytesIO(pdf_bytes))
     if reader.is_encrypted:
         raise ValueError("이미 암호가 걸린 PDF 예요.")
-    sizes = [(float(p.mediabox.width), float(p.mediabox.height)) for p in reader.pages]
-    overlay = _overlay(sizes, label, footer, font)
-
     writer = PdfWriter(clone_from=reader)                  # 페이지를 writer 에 붙인 뒤에 겹쳐야 안전해요
-    for page, ov in zip(writer.pages, overlay.pages):
-        page.merge_page(ov)
+
+    if watermark:                                          # 눈에 보이는 워터마크 (끄면 암호화 + 보이지 않는 추적 코드만)
+        font = pick_font()
+        if font == "Helvetica" and any(ord(ch) > 127 for ch in label + footer):
+            log.warning("한글 글꼴을 못 찾아서 워터마크의 한글이 '?' 로 나가요. fonts-nanum 을 설치하거나 PDF_FONT 를 지정하세요.")
+        label = _clean(label, font)
+        footer = _clean(footer or label, font, 140)
+        sizes = [(float(p.mediabox.width), float(p.mediabox.height)) for p in reader.pages]
+        overlay = _overlay(sizes, label, footer, font)
+        for page, ov in zip(writer.pages, overlay.pages):
+            page.merge_page(ov)
 
     writer.add_metadata({
         "/Title": title or "민혁닷컴 문제지",

@@ -71,16 +71,24 @@ def get(s, token, kind="main"):
     return s.app.test_client().get(f"/pdf/{FID}?kind={kind}", headers=h)
 
 
-def test_buyer_gets_watermarked_encrypted_pdf(srv):
+def test_buyer_gets_encrypted_pdf_without_visible_watermark(srv):
     r = get(srv, "buyer")
     assert r.status_code == 200
     reader = PdfReader(io.BytesIO(r.data))
     assert reader.is_encrypted and reader.decrypt("") != 0
     txt = reader.pages[0].extract_text()
     assert "Original problem text" in txt
-    assert "tester" in txt                                  # 받은 사람 아이디가 찍혀요
-    assert "ID " in txt
+    assert "tester" not in txt                              # 눈에 보이는 워터마크는 기본 꺼짐
+    assert "license:" in (reader.metadata.subject or "")    # 보이지 않는 추적 코드는 남아요
     assert r.headers["Cache-Control"] == "private, no-store"
+
+
+def test_visible_watermark_can_be_turned_on(srv, monkeypatch):
+    monkeypatch.setattr(srv, "WATERMARK", True)
+    reader = PdfReader(io.BytesIO(get(srv, "buyer").data))
+    reader.decrypt("")
+    txt = reader.pages[0].extract_text()
+    assert "tester" in txt and "ID " in txt
 
 
 def test_admin_gets_clean_original(srv):
