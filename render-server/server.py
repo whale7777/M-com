@@ -18,6 +18,7 @@
 from __future__ import annotations
 
 import hashlib
+import hmac
 import json
 import os
 import queue
@@ -28,7 +29,9 @@ import tempfile
 import threading
 import time
 import uuid
+from collections import defaultdict, deque
 from concurrent.futures import Future
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from urllib.parse import quote
 
@@ -38,6 +41,7 @@ from flask import Flask, Response, jsonify, request
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE / "renderer"))
 import make_pdf as R  # noqa: E402
+import secure_pdf  # noqa: E402
 
 # --------------------------------------------------------------------------
 # 설정 (환경변수)
@@ -54,6 +58,10 @@ MAX_ASSET_MB = float(os.environ.get("MAX_ASSET_MB", "3"))
 MAX_QUEUE = int(os.environ.get("MAX_QUEUE", "6"))
 RENDER_TIMEOUT_S = int(os.environ.get("RENDER_TIMEOUT_S", "90"))
 RENDERER_VERSION = "mhq1-r1"                                   # 렌더러/디자인을 바꾸면 올려서 캐시를 무효화
+PROTECT = os.environ.get("PDF_PROTECT", "1").strip() != "0"            # 받는 사람 워터마크 + 복사·수정 차단 (기본 켜짐)
+ALLOW_PRINT = os.environ.get("PDF_ALLOW_PRINT", "1").strip() != "0"    # 인쇄 허용 (기본 허용, 0 이면 인쇄도 막아요)
+RATE_PER_10MIN = int(os.environ.get("PDF_RATE_PER_10MIN", "40"))       # 한 사람이 10분에 받을 수 있는 PDF 수 (0 이면 제한 없음)
+KST = timezone(timedelta(hours=9))
 
 UUID_RE = re.compile(r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$")
 app = Flask(__name__)
@@ -143,6 +151,80 @@ def _obj_get(path: str, max_bytes: int) -> bytes:
             if len(buf) > max_bytes:
                 raise HttpError(413, f"파일이 너무 커요: {path.split('/', 1)[-1]}")
         return bytes(buf)
+
+
+# --------------------------------------------------------------------------
+# 다운로드 권한 · 받는 사람 확인 · 요청 횟수 제한 · PDF 보호
+# --------------------------------------------------------------------------
+def _can_download(fid: str, kind: str, token: str) -> bool:
+    """schema_v13 의 mh_can_download 가 있으면 그걸로, 아직 없으면 예전 함수(mh_can_read_object)로 물어봐요."""
+    try:
+        return _sb_rpc("mh_can_download", {"p_file": fid, "p_kind": kind}, token) is True
+    except HttpError as e:
+        if e.status != 502:
+            raise
+        return _sb_rpc("mh_can_read_object", {"p_name": f"{fid}/{kind}.json"}, token) is True
+
+
+def _auth_user(token: str) -> dict | None:
+    if not token:
+        return None
+    try:
+        r = requests.get(f"{SUPABASE_URL}/auth/v1/user", headers={"apikey": ANON_KEY, "Authorization": f"Bearer {token}"}, timeout=10)
+        return r.json() if r.status_code == 200 else None
+    except (requests.RequestException, ValueError):
+        return None
+
+
+def _is_staff(token: str) -> bool:
+    """관리자 · 콘텐츠 직원은 원본 그대로 받아요. 확인이 실패하면 '직원 아님'으로 봐서 보호를 걸어요."""
+    if not token:
+        return False
+    for name, args in (("mh_is_admin", {}), ("staff_can", {"p_perm": "content"})):
+        try:
+            if _sb_rpc(name, args, token) is True:
+                return True
+        except HttpError:
+            pass
+    return False
+
+
+_rate_lock = threading.Lock()
+_rate_hits: "defaultdict[str, deque]" = defaultdict(deque)
+
+
+def _rate_check(key: str):
+    if RATE_PER_10MIN <= 0:
+        return
+    now = time.time()
+    with _rate_lock:
+        q = _rate_hits[key]
+        while q and now - q[0] > 600:
+            q.popleft()
+        if len(q) >= RATE_PER_10MIN:
+            wait_min = max(int((600 - (now - q[0])) // 60) + 1, 1)
+            raise HttpError(429, f"PDF 를 너무 자주 받고 있어요. {wait_min}분 뒤에 다시 해 주세요.")
+        q.append(now)
+        if len(_rate_hits) > 5000:                      # 메모리 정리
+            for k in [k for k, v in _rate_hits.items() if not v or now - v[-1] > 600]:
+                _rate_hits.pop(k, None)
+
+
+def _protect(body: bytes, fid: str, user: dict | None, meta_title: str) -> bytes:
+    """받는 사람 이름 + 날짜 워터마크, 복사·수정 차단. 실패하면 보호 안 된 PDF 를 내보내지 않고 오류로 멈춰요."""
+    uid = str((user or {}).get("id") or "anon")
+    meta = (user or {}).get("user_metadata") or {}
+    name = str(meta.get("username") or str((user or {}).get("email") or "").split("@")[0] or "민혁닷컴 무료자료")
+    code = hmac.new(SERVICE_KEY.encode(), f"{uid}:{fid}".encode(), "sha256").hexdigest()[:8]   # 유출됐을 때 누구 건지 확인용
+    day = datetime.now(KST).strftime("%Y-%m-%d")
+    try:
+        return secure_pdf.protect(
+            body, label=f"{name} · {day}", footer=f"{name} · {day} · ID {code} · 민혁닷컴",
+            title=meta_title or "민혁닷컴 문제지", allow_print=ALLOW_PRINT, code=code,
+        )
+    except Exception:  # noqa: BLE001
+        app.logger.exception("pdf protect failed")
+        raise HttpError(500, "PDF 보호 처리 중 오류가 났어요. 관리자에게 알려 주세요.")
 
 
 # --------------------------------------------------------------------------
@@ -309,7 +391,7 @@ def fname_for(meta_title: str, kind: str) -> str:
 # --------------------------------------------------------------------------
 @app.get("/health")
 def health():
-    return jsonify({"ok": True, "version": RENDERER_VERSION, "configured": bool(SUPABASE_URL and ANON_KEY and SERVICE_KEY)})
+    return jsonify({"ok": True, "version": RENDERER_VERSION, "configured": bool(SUPABASE_URL and ANON_KEY and SERVICE_KEY), "protect": PROTECT})
 
 
 @app.get("/pdf/<fid>")
@@ -327,8 +409,17 @@ def pdf(fid: str):
     # 1) 권한: 사이트의 Supabase 규칙에 로그인 토큰 그대로 물어본다
     need = ["main", "solution"] if kind == "all" else [kind]
     for k in need:
-        if _sb_rpc("mh_can_read_object", {"p_name": f"{fid}/{k}.json"}, token) is not True:
+        if not _can_download(fid, k, token):
             raise HttpError(403, "이 자료를 받을 권한이 없어요. (구매하거나 M패스로 받은 뒤 다시 눌러 주세요)")
+
+    # 1-1) 직원이 아니면 보호(워터마크 + 복사·수정 차단)를 걸고, 한 사람이 너무 자주 받지 못하게 제한
+    user, protect = None, False
+    if PROTECT:
+        protect = not _is_staff(token)
+        if protect:
+            user = _auth_user(token)
+            ip = request.headers.get("X-Forwarded-For", "").split(",")[-1].strip() or request.remote_addr or "?"
+            _rate_check(("u:" + str(user["id"])) if user and user.get("id") else ("ip:" + ip))
 
     # 2) JSON 과 이미지 정보 읽기
     jpath = f"{fid}/main.json"
@@ -359,10 +450,13 @@ def pdf(fid: str):
         make_pdf_file(data, assets, part, cp)
         cache_trim()
     body = cp.read_bytes()
+    if protect:
+        body = _protect(body, fid, user, meta_title)      # 캐시에는 원본, 받는 사람마다 그 자리에서 찍어요
     disp = "inline" if request.args.get("inline") == "1" else "attachment"
     resp = Response(body, mimetype="application/pdf")
     resp.headers["Content-Disposition"] = f"{disp}; filename*=UTF-8''{quote(fname_for(meta_title, kind))}"
     resp.headers["Cache-Control"] = "private, no-store"
+    resp.headers["X-Content-Type-Options"] = "nosniff"
     resp.headers["X-MHQ-Cache"] = "hit" if hit else "miss"
     return resp
 
