@@ -67,6 +67,14 @@ def test_watermark_text_on_every_page():
         assert "ab12cd34" in txt
 
 
+def test_watermark_off_keeps_encryption_and_trace_code():
+    r = open_pdf(secure_pdf.protect(make_sample(2), label="tester", footer="tester", code="ab12cd34", watermark=False))
+    for page in r.pages:
+        assert "tester" not in page.extract_text()
+    assert "ab12cd34" in (r.metadata.subject or "")
+    assert not (r.user_access_permissions & Perm.MODIFY)
+
+
 def test_original_content_survives():
     r = open_pdf(secure_pdf.protect(make_sample(1), label="u"))
     assert "Problem page 1" in r.pages[0].extract_text()
