@@ -1,4 +1,4 @@
-import { DAY } from './util.js?v=24';
+import { DAY } from './util.js?v=25';
 
 // 앱 전체가 같이 쓰는 상태. (여러 모듈이 같은 객체를 보기 때문에 한 곳에 모아뒀어요)
 export const S = {
@@ -14,6 +14,8 @@ export const S = {
   exp: new Map(),     // 자료 id → 만료 시각(ms)
   expired: new Set(), // 30일이 지나 만료된 자료 id
   dl: new Set(),      // 받은 적 있는 파일 'id:main' / 'id:solution'
+  myGroups: new Set(), // v14: 내가 속한 그룹 id
+  groups: [],          // v14: 그룹 목록 [{id, name}] (자료 권한이 있는 직원만 불러와요)
   tax: [],
   site: {},
   files: [],
@@ -61,13 +63,22 @@ export const roleBadge = () => (S.role ? `<i class="badge role ${S.role}">${ROLE
 
 // 이 자료의 "잠금"이 풀려 있나? (직원(자료 권한) / M패스 / 구매)
 // 무료 자료는 모두에게, 프리미엄은 자료 권한이 있는 직원 / 구매한 사람 / M패스로 받은 사람에게 열려요.
-export const unlocked = (f) => f.tier === 'free' || can('content') || S.owned.has(f.id);
+// v14: "특정 그룹만 허용"인 자료는 그 그룹 회원(또는 자료 권한 직원)만 받을 수 있어요. 제한이 없으면 항상 true.
+export const groupOk = (f) => !(f.allowGroups && f.allowGroups.length) || can('content') || f.allowGroups.some((g) => S.myGroups.has(g));
+export const groupLocked = (f) => !groupOk(f);
+export const unlocked = (f) => groupOk(f) && (f.tier === 'free' || can('content') || S.owned.has(f.id));
 export const canMain = (f) => unlocked(f);
 export const canSol = (f) => !!f.hasSolution && unlocked(f);
 // 포인트로 살 수 있는 상태인가?
-export const buyable = (f) => !unlocked(f) && Number(f.price) > 0;
+export const buyable = (f) => groupOk(f) && !unlocked(f) && Number(f.price) > 0;
 // M패스로 받을 수 있나? (패스가 있고 남은 건수가 있을 때)
-export const claimable = (f) => !unlocked(f) && S.pass.active && S.pass.left > 0;
+export const claimable = (f) => groupOk(f) && !unlocked(f) && S.pass.active && S.pass.left > 0;
+// v14: 문제/해설 PDF 가 몇 장인가? 목록이 비어 있으면 예전처럼 한 장(main.pdf / solution.pdf)
+export const partsOf = (f, kind) => {
+  const a = kind === 'solution' ? f.solutionFiles : f.mainFiles;
+  return Array.isArray(a) && a.length ? a : [{ p: `${kind === 'solution' ? 'solution' : 'main'}.pdf`, n: '' }];
+};
+export const isMulti = (f, kind) => (kind === 'solution' ? f.solutionSrc : f.mainSrc) === 'upload' && partsOf(f, kind).length > 1;
 
 /* ---- v11: 다운로드 기록(회색 버튼) · 30일 만료 ---- */
 const DLKEY = 'mcom_dl';

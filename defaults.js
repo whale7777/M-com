@@ -1,4 +1,4 @@
-import { CONFIG } from './config.js?v=24';
+import { CONFIG } from './config.js?v=25';
 
 // 처음 한 번만 쓰이는 기본 과목·단원. 관리자 패널에서 마음대로 바꿀 수 있어.
 export const DEFAULT_TAX = [
@@ -70,9 +70,10 @@ export const DEFAULT_SITE = {
   menuVer: 1,
 };
 
-export const buildPrem = (tier, ids) => {
+// restricted: v14 그룹 제한 자료는 무료여도 드라이브 ID 를 비공개 칸(mh_premium)에 둬요 (mh_files 는 누구나 읽을 수 있어서)
+export const buildPrem = (tier, ids, restricted = false) => {
   const p = {};
-  if (tier === 'premium' && ids.main) p.driveId = ids.main;
+  if ((tier === 'premium' || restricted) && ids.main) p.driveId = ids.main;
   if (ids.solution) p.solutionId = ids.solution;
   return p;
 };

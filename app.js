@@ -1,11 +1,11 @@
-import { CONFIG } from './config.js?v=24';
-import { $, $$, esc, clone, safeColor, safeLink, num, fmtDT, fmtDate, richText, ID_RE, toast, triggerDownload, DAY, PYNEST_URL } from './util.js?v=24';
-import { DEFAULT_TAX, DEFAULT_SITE, DEFAULT_MENU, DEFAULT_PLANS, DEFAULT_BANNERS } from './defaults.js?v=24';
-import { demoBackend, supabaseBackend } from './backend.js?v=24';
-import { S, subj, unitOf, findUnit, unitPath, unitIds, flatUnits, created, isNew, visibleFiles, unlocked, canMain, canSol, buyable, claimable, hasPreview, can, roleBadge, hasDl, dlKey, daysLeft, isExpired, loadLocalDl, saveLocalDl } from './state.js?v=24';
-import { bindAdmin, openAdmin, adminClick } from './admin.js?v=24';
-import { B, barHTML, syncSel, bulkClick, bindBulk } from './bulk.js?v=24';
-import { pencil, startEdit, cancelEdit, commitEdit, newPageHTML, afterNewPage, filePanelHTML, openFilePanel, bindEditor } from './editor.js?v=24';
+import { CONFIG } from './config.js?v=25';
+import { $, $$, esc, clone, safeColor, safeLink, num, fmtDT, fmtDate, richText, ID_RE, toast, triggerDownload, DAY, PYNEST_URL } from './util.js?v=25';
+import { DEFAULT_TAX, DEFAULT_SITE, DEFAULT_MENU, DEFAULT_PLANS, DEFAULT_BANNERS } from './defaults.js?v=25';
+import { demoBackend, supabaseBackend } from './backend.js?v=25';
+import { S, subj, unitOf, findUnit, unitPath, unitIds, flatUnits, created, isNew, visibleFiles, unlocked, canMain, canSol, buyable, claimable, hasPreview, can, roleBadge, hasDl, dlKey, daysLeft, isExpired, loadLocalDl, saveLocalDl, groupOk, groupLocked, partsOf, isMulti } from './state.js?v=25';
+import { bindAdmin, openAdmin, adminClick } from './admin.js?v=25';
+import { B, barHTML, syncSel, bulkClick, bindBulk } from './bulk.js?v=25';
+import { pencil, startEdit, cancelEdit, commitEdit, newPageHTML, afterNewPage, filePanelHTML, openFilePanel, bindEditor } from './editor.js?v=25';
 
 S.DEMO = !CONFIG.SUPABASE_URL || /여기에/.test(CONFIG.SUPABASE_URL) || new URLSearchParams(location.search).has('demo');
 const demoFlags = {};
@@ -131,6 +131,7 @@ function coverHTML(f, big = false) {
     <em>${Number(f.count) || '-'}문항</em><u></u><u></u><u></u></div></div>`;
 }
 function priceTag(f) {
+  if (groupLocked(f)) return '<span class="pt grp">👥 그룹 전용</span>';
   if (f.tier === 'free') return '<span class="pt free">무료</span>';
   if (can('content')) return `<span class="pt own">관리자</span><span class="pt price">🪙 ${num(f.price)}P</span>`;
   if (unlocked(f)) return '<span class="pt own">내 자료</span>';
@@ -140,7 +141,7 @@ function cardHTML(f) {
   const sj = subj(f.subject), un = unitOf(f);
   return `<a class="card ${f.visible === false ? 'draft' : ''}" href="#/f/${encodeURIComponent(f.id)}">
     <div class="c-img">${coverHTML(f)}
-      <span class="c-badges">${f.pinned ? '<i class="bd pin">📌</i>' : ''}${isNew(f) ? '<i class="bd new">NEW</i>' : ''}${f.visible === false ? '<i class="bd hid">숨김</i>' : ''}${f.hasSolution ? '<i class="bd sol">해설</i>' : ''}</span></div>
+      <span class="c-badges">${f.pinned ? '<i class="bd pin">📌</i>' : ''}${isNew(f) ? '<i class="bd new">NEW</i>' : ''}${f.visible === false ? '<i class="bd hid">숨김</i>' : ''}${f.hasSolution ? '<i class="bd sol">해설</i>' : ''}${(f.allowGroups || []).length ? '<i class="bd grp" title="특정 그룹만 다운로드">👥</i>' : ''}</span></div>
     <div class="c-body">
       <div class="c-tag" style="--c:${safeColor(sj?.color)}">${esc(sj ? sj.name : '미분류')}${un ? ' · ' + esc(un.name) : ''}</div>
       <h3>${esc(f.title)}</h3>
@@ -349,14 +350,14 @@ function listHTML() {
 /* ---- 폴더형 보기: 큰 단원 › 범위 › 소단원 › 회차 칸 ---- */
 const natural = (a, b) => String(a.title).localeCompare(String(b.title), 'ko', { numeric: true });
 function tileHTML(f) {
-  const lock = f.tier === 'premium' && !unlocked(f);
+  const lock = (f.tier === 'premium' || groupLocked(f)) && !unlocked(f);
   if (can('content') && B.on) {
     const pr = f.price > 0 ? `${num(f.price)}P` : '무료';
     return `<label class="tl pick ${f.visible === false ? 'hid' : ''}"><input type="checkbox" data-sel="${esc(f.id)}"><span class="tl-t">${esc(f.title)}</span><span class="tl-m">${pr}${f.visible === false ? ' · 숨김' : ''}${f.pinned ? ' · 📌' : ''}</span></label>`;
   }
   const open = canMain(f);
   return `<div class="tl ${lock ? 'lock' : ''} ${f.visible === false ? 'hid' : ''}"><a class="tl-t" href="#/f/${encodeURIComponent(f.id)}">${esc(f.title)}${isNew(f) ? '<em class="nw">N</em>' : ''}${f.visible === false ? '<em class="hd">숨김</em>' : ''}</a>
-    ${open ? `<button class="tl-i ${hasDl(f.id, 'main') ? 'done' : ''}" data-dl="${esc(f.id)}" type="button" aria-label="다운로드" title="${hasDl(f.id, 'main') ? '이미 받았어요 (다시 받기)' : '다운로드'}">⬇</button>` : `<a class="tl-i" href="#/f/${encodeURIComponent(f.id)}" aria-label="자세히" title="${isExpired(f) ? '만료됐어요 · 다시 구매/M패스' : ''}">${isExpired(f) ? '⌛' : buyable(f) ? '🪙' : '🔒'}</a>`}</div>`;
+    ${open ? `<button class="tl-i ${hasDl(f.id, 'main') ? 'done' : ''}" data-dl="${esc(f.id)}" type="button" aria-label="다운로드" title="${hasDl(f.id, 'main') ? '이미 받았어요 (다시 받기)' : '다운로드'}">⬇</button>` : `<a class="tl-i" href="#/f/${encodeURIComponent(f.id)}" aria-label="자세히" title="${isExpired(f) ? '만료됐어요 · 다시 구매/M패스' : ''}">${isExpired(f) ? '⌛' : groupLocked(f) ? '👥' : buyable(f) ? '🪙' : '🔒'}</a>`}</div>`;
 }
 const treeDepth = (units) => Math.max(0, ...(units || []).map((u) => 1 + treeDepth(u.children)));
 const unitHref = (sj, id) => `#/${encodeURIComponent(sj.id)}${id ? '/' + encodeURIComponent(id) : ''}`;
@@ -434,14 +435,15 @@ function detailHTML(id) {
           <dl class="spec">
             <dt>난이도</dt><dd><span class="edhost" data-edhost="level" data-fid="${esc(f.id)}"><span class="edv">${lvDots(f.level)} ${LV[Math.min(3, Math.max(1, Number(f.level) || 1))]}</span>${pencil('level')}</span></dd>
             <dt>문항 수</dt><dd><span class="edhost" data-edhost="count" data-fid="${esc(f.id)}"><span class="edv">${Number(f.count) || '-'}문항</span>${pencil('count')}</span></dd>
-            <dt>형식</dt><dd>PDF${f.hasSolution ? ' · 해설 PDF 포함' : ''}</dd>
+            <dt>형식</dt><dd>PDF${isMulti(f, 'main') ? ` ${partsOf(f, 'main').length}장 (zip)` : ''}${f.hasSolution ? ' · 해설 PDF 포함' + (isMulti(f, 'solution') ? ` ${partsOf(f, 'solution').length}장 (zip)` : '') : ''}</dd>
+            ${(f.allowGroups || []).length ? `<dt>대상</dt><dd>👥 ${can('content') ? esc((f.allowGroups || []).map((g) => (S.groups.find((x) => x.id === g) || { name: '(삭제된 그룹)' }).name).join(', ')) : '지정한 그룹만'}</dd>` : ''}
             <dt>등록일</dt><dd>${date}</dd>
             <dt>다운로드</dt><dd>${num(f.downloads)}회</dd>
           </dl>
         </div></div>
       <section class="d-sec"><h2>이 자료에는 ${can('content') ? '<button class="pencil" type="button" data-srcopen="' + esc(f.id) + '" title="파일 바꾸기" aria-label="파일 바꾸기">✏️ <small>파일 바꾸기</small></button>' : ''}</h2>
-        <ul class="incl"><li>📄 <b>문제 PDF</b> — ${Number(f.count) || '-'}문항</li>
-          <li>${f.hasSolution ? '📝 <b>해설 PDF</b> — 풀이 수록' : '<span class="dim">📝 해설 PDF 없음</span>'}</li>
+        <ul class="incl"><li>📄 <b>문제 PDF</b> — ${Number(f.count) || '-'}문항${isMulti(f, 'main') ? ` · ${partsOf(f, 'main').length}장을 zip 으로` : ''}</li>
+          <li>${f.hasSolution ? '📝 <b>해설 PDF</b> — 풀이 수록' + (isMulti(f, 'solution') ? ` · ${partsOf(f, 'solution').length}장을 zip 으로` : '') : '<span class="dim">📝 해설 PDF 없음</span>'}</li>
           <li>🔁 <b>구매하거나 받은 뒤 30일 동안</b> 재다운로드 (내 정보에서 확인)</li></ul>
         ${can('content') ? filePanelHTML(f) : ''}</section>
       <section class="d-sec"><h2>미리보기</h2>
@@ -457,17 +459,21 @@ function buyBoxHTML(f) {
   const priceBig = free ? '<b class="pr free">무료</b>' : `<b class="pr">🪙 ${num(f.price)} <small>P</small></b>`;
   const priceEd = `<span class="edhost" data-edhost="price" data-fid="${id}"><span class="edv">${priceBig}</span>${pencil('price', '가격 수정')}</span>`;
   const btns = [];
-  if (canMain(f)) btns.push(`<button class="btn primary lg block ${hasDl(f.id, 'main') ? 'done' : ''}" data-dl="${id}" type="button">${hasDl(f.id, 'main') ? '✓ 문제 PDF 다시 받기' : '⬇ 문제 PDF 바로 다운로드'}</button>`);
-  if (canSol(f)) btns.push(`<button class="btn ghost lg block ${hasDl(f.id, 'solution') ? 'done' : ''}" data-dl="${id}" data-kind="solution" type="button">${hasDl(f.id, 'solution') ? '✓ 해설 PDF 다시 받기' : '📝 해설 PDF 다운로드'}</button>`);
+  const gl = groupLocked(f);
+  const zm = isMulti(f, 'main') ? ' (zip)' : '', zs = isMulti(f, 'solution') ? ' (zip)' : '';
+  if (canMain(f)) btns.push(`<button class="btn primary lg block ${hasDl(f.id, 'main') ? 'done' : ''}" data-dl="${id}" type="button">${hasDl(f.id, 'main') ? `✓ 문제 PDF 다시 받기${zm}` : `⬇ 문제 PDF 바로 다운로드${zm}`}</button>`);
+  if (canSol(f)) btns.push(`<button class="btn ghost lg block ${hasDl(f.id, 'solution') ? 'done' : ''}" data-dl="${id}" data-kind="solution" type="button">${hasDl(f.id, 'solution') ? `✓ 해설 PDF 다시 받기${zs}` : `📝 해설 PDF 다운로드${zs}`}</button>`);
   if (buyable(f)) btns.push(`<button class="btn buy lg block" data-buy="${id}" type="button">🪙 ${num(f.price)}P로 구매하기</button>`);
   if (claimable(f)) btns.push(`<button class="btn pass lg block" data-claim="${id}" type="button">👑 M패스로 받기 <small>(남은 ${num(S.pass.left)}건)</small></button>`);
+  else if (gl) { /* 그룹 전용: 구매·M패스 안내 없이 아래 안내 문구만 */ }
   else if (!unlocked(f) && S.user && S.pass.active) btns.push('<a class="btn ghost block" href="#/pass">👑 M패스 건수를 다 썼어요 · 추가 구매</a>');
   else if (!unlocked(f)) btns.push('<a class="btn ghost block" href="#/pass">👑 M패스로 더 싸게 받기</a>');
   const me = S.user
     ? `<div class="mypts"><span>내 포인트</span><b>🪙 ${num(S.points)} P</b><a href="#/points">충전</a></div>${S.pass.active ? `<div class="mypts"><span>M패스 남은 건수</span><b>👑 ${num(S.pass.left)}건</b><a href="#/pass">보기</a></div>` : ''}`
     : '<div class="mypts"><span>구매하려면 로그인이 필요해요</span><button class="btn sm primary" data-act="login" type="button">로그인</button></div>';
   const dleft = daysLeft(f.id);
-  const note = unlocked(f) && !free ? (can('content') ? '' : `<p class="b-note ok">✅ 내 자료예요. ${dleft === null ? '' : `<b>${dleft}일</b> 남았어요 (${fmtDate(new Date(S.exp.get(f.id)))}까지) · `}기간 안에는 다시 받을 수 있어요</p>`)
+  const note = gl ? `<p class="b-note grp">👥 지정된 그룹 회원만 받을 수 있는 자료예요.${S.user ? ' 내 계정은 해당 그룹이 아니에요. 선생님께 문의해주세요.' : ' 로그인하면 내가 대상인지 확인돼요.'}</p>`
+    : unlocked(f) && !free ? (can('content') ? '' : `<p class="b-note ok">✅ 내 자료예요. ${dleft === null ? '' : `<b>${dleft}일</b> 남았어요 (${fmtDate(new Date(S.exp.get(f.id)))}까지) · `}기간 안에는 다시 받을 수 있어요</p>`)
     : isExpired(f) ? '<p class="b-note exp">⌛ 받은 지 30일이 지나 만료됐어요. 다시 구매하거나 M패스 건수를 쓰면 30일 더 받을 수 있어요.</p>'
     : (!free ? '<p class="b-note">구매하거나 M패스로 받으면 30일 동안 문제·해설 PDF를 다시 받을 수 있어요.</p>' : '');
   return `<div class="buy-box"><div class="b-price"><span>${free ? '무료 자료' : '프리미엄'}</span>${priceEd}</div>
@@ -690,14 +696,17 @@ async function download(id, kind) {
   const f = S.files.find((x) => x.id === id);
   if (!f) return;
   if (isPending()) return toast('관리자 승인을 기다리는 중이라 아직 다운로드할 수 없어요 ⏳');
+  if (groupLocked(f)) return toast('이 자료는 지정된 그룹 회원만 다운로드할 수 있어요 👥');
   if (kind === 'solution' ? !canSol(f) : !canMain(f)) return toast('이 자료는 구매하거나 M패스로 받아야 다운로드할 수 있어요');
   const isJson = (kind === 'solution' ? f.solutionSrc : f.mainSrc) === 'json';
   try {
+    const multi = isMulti(f, kind);
     if (isJson && !S.DEMO) toast('PDF 만드는 중… 📄 (처음엔 몇 초 걸려요)');
+    else if (multi && !S.DEMO) toast(`PDF ${partsOf(f, kind).length}장을 zip 으로 묶는 중… 📦`);
     const url = await S.api.getLink(f, kind);
     if (S.DEMO) toast('데모 모드라 실제 파일은 없어! 설정하면 바로 다운로드돼');
     else {
-      const nm = `${String(f.title).replace(/[\\/:*?"<>|\r\n]+/g, ' ').trim().slice(0, 80) || 'file'}${kind === 'solution' ? ' 해설' : ''}.pdf`;
+      const nm = `${String(f.title).replace(/[\\/:*?"<>|\r\n]+/g, ' ').trim().slice(0, 80) || 'file'}${kind === 'solution' ? ' 해설' : ''}.${multi ? 'zip' : 'pdf'}`;
       triggerDownload(url, url.startsWith('blob:') ? nm : '');
       toast('다운로드 시작! 📥');
     }
@@ -781,7 +790,7 @@ async function confirmBuy() {
   btn.disabled = true;
   try {
     const r = await (mode === 'pass' ? S.api.buyPass(id) : mode === 'claim' ? S.api.claimFile(id) : S.api.buyFile(id));
-    const common = { login: '로그인이 필요해요', blocked: '사용이 중지된 계정이에요', not_found: mode === 'pass' ? '판매 중인 패스가 아니에요' : '자료를 찾을 수 없어요', pending: '관리자 승인을 기다리는 중이에요 ⏳' };
+    const common = { group_only: '지정된 그룹 회원만 받을 수 있는 자료예요 👥', login: '로그인이 필요해요', blocked: '사용이 중지된 계정이에요', not_found: mode === 'pass' ? '판매 중인 패스가 아니에요' : '자료를 찾을 수 없어요', pending: '관리자 승인을 기다리는 중이에요 ⏳' };
     const msg = ({
       buy: { ok: '구매 완료! 🎉 이제 다운로드할 수 있어요', already: '이미 이용할 수 있는 자료예요', insufficient: '포인트가 부족해요', not_for_sale: '포인트로 판매하지 않는 자료예요' },
       claim: { ok: '받았어요! 🎉 이제 다운로드할 수 있어요', already: '이미 받은 자료예요', free: '무료 자료라 바로 받을 수 있어요', no_pass: '유효한 M패스가 없어요', no_quota: 'M패스 남은 건수가 없어요' },
@@ -972,14 +981,16 @@ function bind() {
    ===================================================================== */
 async function loadFiles() {
   try { S.files = await S.api.listFiles(can('content')); } catch (e) { console.error(e); toast('자료를 불러오지 못했어'); S.files = []; }
+  if (can('content') || can('members')) { try { S.groups = await S.api.listGroups(); } catch { S.groups = []; } } else S.groups = [];
   await loadNotices();
 }
 async function refreshUserState() {
   S.hasPass = false; S.points = 0; S.owned = new Set(); S.exp = new Map(); S.expired = new Set();
-  S.dl = new Set(); loadLocalDl();
+  S.dl = new Set(); loadLocalDl(); S.myGroups = new Set();
   S.pass = { active: false, left: 0, quota: 0, used: 0, expires: null, plan: '' };
   if (S.user) {
     try { S.pass = await S.api.myPass(S.user); S.hasPass = S.pass.active; } catch (e) { console.warn(e); }
+    try { S.myGroups = new Set(await S.api.myGroups(S.user)); } catch (e) { console.warn(e); } // v14 SQL 전이면 그룹 없음
     try { const st = await S.api.myState(S.user); S.points = st.points; S.owned = new Set(st.owned); S.exp = new Map(Object.entries(st.exp || {})); S.expired = new Set(st.expired || []); (st.dl || []).forEach((k) => S.dl.add(k)); } catch (e) { console.warn(e); }
   }
   renderHeader();

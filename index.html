@@ -8,7 +8,7 @@
 <meta name="description" content="물리·화학·생물·지구과학 엄선 문제 PDF">
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.min.css">
 <style>.drawer{position:fixed;top:0;bottom:0;left:0;width:300px;max-width:84vw;transform:translateX(-102%);visibility:hidden;background:#fff;z-index:100}.drawer.open{transform:none;visibility:visible}.drawer-bg{position:fixed;inset:0;visibility:hidden;z-index:90}.drawer-bg.open{visibility:visible}</style>
-<link rel="stylesheet" href="style.css?v=24">
+<link rel="stylesheet" href="style.css?v=25">
 </head>
 <body>
 <div id="notice" class="notice hidden"></div>
@@ -118,6 +118,7 @@
     <button class="tab" data-tab="tabStorage" data-perm="@admin" type="button">💾 저장공간</button>
     <button class="tab" data-tab="tabSite" data-perm="@admin" type="button">사이트 설정</button>
     <button class="tab" data-tab="tabMembers" data-perm="members" type="button">🙋 가입 승인</button>
+    <button class="tab" data-tab="tabGroups" data-perm="members" type="button">👪 그룹</button>
     <button class="tab" data-tab="tabStaff" data-perm="roles_basic" type="button">👥 권한</button>
   </div>
 
@@ -216,6 +217,11 @@
     <div id="memberList" class="list"><p class="note">불러오는 중…</p></div>
   </div>
 
+  <div id="tabGroups" class="tabpane hidden">
+    <p class="note">가입한(승인된) 회원 명단에서 <b>그룹</b>을 지정해요. 자료를 올릴 때 <b>"특정 그룹만 다운로드 허용"</b>을 켜면 그 그룹 회원만 받을 수 있어요. 한 명이 여러 그룹에 속해도 돼요.</p>
+    <div id="groupBox"><p class="note">불러오는 중…</p></div>
+  </div>
+
   <div id="tabStaff" class="tabpane hidden">
     <p class="note">민혁닷컴과 PyNest 가 <b>같은 권한</b>을 써요. 여기서 정하면 두 사이트에 모두 적용돼요. (가입된 PyNest ID 만 가능)</p>
     <div class="role-help">
@@ -259,6 +265,6 @@
 </dialog>
 
 <div id="toast" class="toast"></div>
-<script type="module" src="app.js?v=24"></script>
+<script type="module" src="app.js?v=25"></script>
 </body>
 </html>

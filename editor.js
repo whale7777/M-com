@@ -3,9 +3,9 @@
    - 설정 창을 따로 열지 않고, 자료를 연 화면에서 제목·가격·설명을 바로 수정해요.
    - 가격이 0이면 무료, 1 이상이면 프리미엄으로 자동 정해져요.
    ===================================================================== */
-import { $, $$, esc, num, toast, extractDriveId, MAX_UPLOAD_MB, fmtSize, safeColor, RENDER_URL, shrinkImage, unzipImages } from './util.js?v=24';
-import { S, subj, flatUnits, findUnit, can } from './state.js?v=24';
-import { DEFAULT_PRICE, LEVEL_PRICE } from './defaults.js?v=24';
+import { $, $$, esc, num, toast, extractDriveId, MAX_UPLOAD_MB, fmtSize, safeColor, RENDER_URL, shrinkImage, unzipImages } from './util.js?v=25';
+import { S, subj, flatUnits, findUnit, can, partsOf } from './state.js?v=25';
+import { DEFAULT_PRICE, LEVEL_PRICE } from './defaults.js?v=25';
 
 export const MAX_PRICE = 1000000;
 const LV = ['', '기본', '표준', '심화'];
@@ -20,7 +20,7 @@ export async function applyEdit(f, ch = {}, extra = {}) {
   let p = {};
   try { p = await S.api.getPremium(f.id); } catch { /* 없으면 빈 값 */ }
   const ids = {
-    main: (f.mainSrc || 'drive') !== 'drive' ? null : ((f.tier === 'free' ? f.driveId : p.driveId) || null),
+    main: (f.mainSrc || 'drive') !== 'drive' ? null : (f.driveId || p.driveId || null),
     solution: !f.hasSolution || (f.solutionSrc || 'drive') !== 'drive' ? null : (p.solutionId || null),
     ...(extra.ids || {}),
   };
@@ -31,6 +31,7 @@ export async function applyEdit(f, ch = {}, extra = {}) {
     count: Number(m.count) || 0, desc: m.desc || '', price, visible: m.visible !== false,
     mainSrc: m.mainSrc || 'drive', hasSolution: !!m.hasSolution, solutionSrc: m.solutionSrc || 'drive',
     previewSrc: m.previewSrc || 'drive', previewId: m.previewId || '',
+    mainFiles: m.mainFiles || [], solutionFiles: m.solutionFiles || [], allowGroups: m.allowGroups || [],
   };
   await S.api.updateFile(f.id, data, ids, extra.up || {});
   return data;
@@ -68,26 +69,55 @@ export function srcFieldsHTML(mainDefault = 'upload') {
   const N = [['none', '없음'], ...M.map(([v, l]) => (v === 'json' ? ['json', '같은 JSON에서 자동 생성'] : [v, l]))];
   return `<fieldset class="src" data-kind="main"><legend>📄 문제 PDF</legend>${seg('main', M)}
       <input name="drive" data-for="drive" placeholder="https://drive.google.com/file/d/..../view">
-      <input name="main_file" data-for="upload" type="file" accept="application/pdf,.pdf">
+      <input name="main_file" data-for="upload" type="file" accept="application/pdf,.pdf" multiple>
+      <small class="note" data-for="upload">PDF 를 <b>여러 장</b> 한 번에 고를 수 있어요 (Ctrl / Shift 로 여러 개 선택). 여러 장이면 받을 때 <b>zip 한 개</b>로 묶여서 받아져요. 이름순으로 정렬돼요.</small>
       <label class="jl" data-for="json">문제 JSON (.json)<input name="main_json" type="file" accept="application/json,.json"></label>
       <label class="jl" data-for="json">그림·도표 이미지 (.png .jpg .jpeg .svg 또는 <b>.zip</b> · 여러 개 선택 가능)<input name="main_imgs" type="file" accept="image/png,image/jpeg,.png,.jpg,.jpeg,.svg,.zip,image/svg+xml,application/zip" multiple></label>
       <small class="note" data-for="json">문제 PDF에는 문제만, <b>정답·해설은 아래 '해설 PDF'로 따로</b> 나가요(JSON에 들어 있는 정답·해설로 자동 생성). JSON 안에서 <code>"asset": "파일이름.png"</code> 로 이미지를 불러와요. zip 으로 올리면 브라우저에서 자동으로 풀어 그림만 올리고 zip 은 버려요(서버에 안 남아요). 이미지는 올리기 전에 자동으로 가볍게 줄여요. 용량은 PDF의 1/10 수준이에요.</small>
       <small class="note" data-cur></small></fieldset>
     <fieldset class="src" data-kind="solution"><legend>📝 해설 PDF <small>(선택 · 구매하거나 받은 사람만 볼 수 있음)</small></legend>${seg('solution', N)}
       <input name="solution" data-for="drive" placeholder="https://drive.google.com/file/d/..../view">
-      <input name="solution_file" data-for="upload" type="file" accept="application/pdf,.pdf">
+      <input name="solution_file" data-for="upload" type="file" accept="application/pdf,.pdf" multiple>
       <small class="note" data-cur></small></fieldset>
     <fieldset class="src" data-kind="preview"><legend>👁 미리보기 <small>(선택 · 샘플 1~2문제 · 누구나 볼 수 있으니 팔 내용은 넣지 마세요)</small></legend>${seg('preview', [['none', '없음'], ...D])}
       <input name="preview" data-for="drive" placeholder="https://drive.google.com/file/d/..../view">
       <input name="preview_file" data-for="upload" type="file" accept="application/pdf,.pdf">
       <small class="note" data-cur></small></fieldset>
-    <p class="note">드라이브 링크는 공유를 <b>"링크가 있는 모든 사용자 – 뷰어"</b>로 해둬야 해요. 직접 업로드는 PDF만, 파일당 ${MAX_UPLOAD_MB}MB까지이고 Supabase 저장공간을 써요.</p>`;
+    <p class="note">드라이브 링크는 공유를 <b>"링크가 있는 모든 사용자 – 뷰어"</b>로 해둬야 해요. 직접 업로드는 PDF만, 파일당 ${MAX_UPLOAD_MB}MB까지이고 Supabase 저장공간을 써요.</p>
+    ${groupFieldHTML()}`;
+}
+
+/* ---------- v14: 다운로드 허용 그룹 (선택 옵션) ---------- */
+export function groupFieldHTML() {
+  const gs = S.groups || [];
+  return `<fieldset class="grpbox" data-grp><legend>👥 다운로드 허용 그룹 <small>(선택 · 안 켜면 제한 없음)</small></legend>
+    <label class="chk"><input type="checkbox" name="grp_on"> 특정 그룹만 다운로드 허용하기</label>
+    <div class="grp-list hidden" data-grplist>${gs.length ? gs.map((g) => `<label class="chk"><input type="checkbox" name="grp" value="${esc(g.id)}"> ${esc(g.name)}</label>`).join('')
+      : '<small class="note">아직 그룹이 없어요. 관리자 › 👪 그룹 탭에서 먼저 그룹을 만들어줘.</small>'}</div>
+    <small class="note hidden" data-grpnote>고른 그룹의 회원(과 직원)만 받을 수 있어요. 그룹 회원이어도 무료 자료가 아니면 구매·M패스는 필요해요 — 우리 반에게 무료로 주려면 <b>가격 0 + 그룹</b>으로 해줘.</small></fieldset>`;
+}
+export function syncGroups(form) {
+  const on = !!form.elements.grp_on?.checked;
+  $('[data-grplist]', form)?.classList.toggle('hidden', !on);
+  $('[data-grpnote]', form)?.classList.toggle('hidden', !on);
+}
+function fillGroups(form, f) {
+  const set = new Set(f?.allowGroups || []);
+  if (form.elements.grp_on) form.elements.grp_on.checked = set.size > 0;
+  $$('input[name=grp]', form).forEach((c) => { c.checked = set.has(c.value); });
+  syncGroups(form);
+}
+function readGroups(form) {
+  if (!form.elements.grp_on?.checked) return { ids: [] };
+  const ids = $$('input[name=grp]:checked', form).map((c) => c.value);
+  return ids.length ? { ids } : { error: '허용할 그룹을 하나 이상 골라줘 (또는 "특정 그룹만 다운로드 허용하기"를 꺼줘)' };
 }
 export function syncSrc(form) {
   for (const fs of $$('fieldset.src', form)) {
     const mode = form.elements[fs.dataset.kind + '_mode'].value;
     $$('[data-for]', fs).forEach((el) => el.classList.toggle('hidden', el.dataset.for !== mode));
   }
+  syncGroups(form);
 }
 const hadOf = (f) => ({ main: f.mainSrc === 'upload' || f.mainSrc === 'json', solution: !!f.hasSolution && (f.solutionSrc === 'upload' || f.solutionSrc === 'json'), preview: f.previewSrc === 'upload' });
 // 이미 있는 자료의 현재 상태를 폼에 채워요
@@ -100,11 +130,18 @@ export function fillSrc(form, f, p = {}) {
   el.solution.value = p.solutionId || '';
   el.preview_mode.value = had.preview ? 'upload' : f.previewId ? 'drive' : 'none';
   el.preview.value = f.previewId || '';
-  const note = '✅ 이미 업로드된 파일이 있어요. 새 파일을 고르면 교체돼요.';
-  for (const k of ['main', 'solution', 'preview']) $(`fieldset.src[data-kind=${k}] [data-cur]`, form).textContent = had[k] ? note : '';
+  const noteOf = (k) => {
+    const n = k === 'preview' ? 1 : partsOf(f, k).length;
+    return `✅ 이미 업로드된 파일이 있어요${n > 1 ? ` (${n}장)` : ''}. 새 파일을 고르면 ${n > 1 ? '지금 파일 전체가 새로 고른 파일로 ' : ''}교체돼요.`;
+  };
+  for (const k of ['main', 'solution', 'preview']) $(`fieldset.src[data-kind=${k}] [data-cur]`, form).textContent = had[k] ? noteOf(k) : '';
   form.dataset.had = JSON.stringify(had);
+  fillGroups(form, f);
   syncSrc(form);
 }
+const MAX_PARTS = 30; // 문제 / 해설 PDF 를 한 번에 올릴 수 있는 최대 장 수
+// 고른 PDF 들을 저장 이름(main.pdf, main_2.pdf …)과 목록 정보로 바꿔요
+const partsFromFiles = (kind, files) => files.map((file, i) => ({ p: `${kind}${i ? '_' + (i + 1) : ''}.pdf`, n: file.name.slice(0, 120), file }));
 const ASSET_RE = /^[A-Za-z0-9][A-Za-z0-9_.-]{0,59}\.(png|jpe?g|svg)$/i;
 // 민혁 JSON 읽기: JSON 문법 → 이미지 이름 → (변환 서버가 있으면) 서버 검사까지
 async function readJson(form, had) {
@@ -155,11 +192,16 @@ async function readSrc(form, kind, label, had) {
     const id = extractDriveId(form.elements[linkName].value);
     return id ? { mode, id } : { error: `${label} 드라이브 링크를 다시 확인해줘` };
   }
-  const file = form.elements[kind + '_file'].files[0];
-  if (!file) return had[kind] ? { mode } : { error: `${label} 파일을 골라줘` };
-  if (!(file.type === 'application/pdf' || /\.pdf$/i.test(file.name))) return { error: `${label}는 PDF 파일만 올릴 수 있어요` };
-  if (file.size > MAX_UPLOAD_MB * 1048576) return { error: `${label} 파일이 너무 커요 (${fmtSize(file.size)} / 최대 ${MAX_UPLOAD_MB}MB)` };
-  return { mode, file };
+  const list = [...form.elements[kind + '_file'].files];
+  if (!list.length) return had[kind] ? { mode } : { error: `${label} 파일을 골라줘` };
+  if (kind !== 'preview' && list.length > MAX_PARTS) return { error: `${label}는 한 번에 ${MAX_PARTS}장까지 올릴 수 있어요` };
+  if (kind === 'preview' && list.length > 1) return { error: '미리보기는 파일 한 개만 올릴 수 있어요' };
+  list.sort((a, b) => a.name.localeCompare(b.name, 'ko', { numeric: true }));
+  for (const file of list) {
+    if (!(file.type === 'application/pdf' || /\.pdf$/i.test(file.name))) return { error: `${label}는 PDF 파일만 올릴 수 있어요: "${file.name}"` };
+    if (file.size > MAX_UPLOAD_MB * 1048576) return { error: `"${file.name}" 파일이 너무 커요 (${fmtSize(file.size)} / 파일당 최대 ${MAX_UPLOAD_MB}MB)` };
+  }
+  return { mode, files: list };
 }
 export async function collectSources(form) {
   let had = { main: false, solution: false, preview: false };
@@ -170,14 +212,22 @@ export async function collectSources(form) {
   const bad = [main, sol, prev].find((x) => x.error);
   if (bad) return { error: bad.error };
   if (sol.mode === 'json' && main.mode !== 'json') return { error: '"같은 JSON에서 자동 생성"은 문제를 민혁 JSON으로 올렸을 때만 쓸 수 있어요' };
+  const grp = readGroups(form);
+  if (grp.error) return { error: grp.error };
   const up = {};
   if (main.json) up.mainJson = main.json;
   if (main.images?.length) up.images = main.images;
-  if (main.file) up.main = main.file;
-  if (sol.file) up.solution = sol.file;
-  if (prev.file) up.preview = prev.file;
+  const mp = main.files ? partsFromFiles('main', main.files) : null, sp = sol.files ? partsFromFiles('solution', sol.files) : null;
+  if (mp) up.main = mp;
+  if (sp) up.solution = sp;
+  if (prev.files) up.preview = prev.files[0];
+  const meta = (a) => (a.length > 1 ? a.map(({ p, n }) => ({ p, n })) : []); // 한 장이면 목록을 비워 둬요 (예전 방식과 같음)
   return {
     data: {
+      ...(mp ? { mainFiles: meta(mp) } : {}), ...(sp ? { solutionFiles: meta(sp) } : {}),
+      // 방식을 업로드가 아닌 것으로 바꾸면 예전 목록은 비워요
+      ...(main.mode !== 'upload' ? { mainFiles: [] } : {}), ...(sol.mode !== 'upload' ? { solutionFiles: [] } : {}),
+      allowGroups: grp.ids,
       mainSrc: main.mode === 'upload' ? 'upload' : main.mode === 'json' ? 'json' : 'drive',
       hasSolution: sol.mode !== 'none', solutionSrc: sol.mode === 'upload' ? 'upload' : sol.mode === 'json' ? 'json' : 'drive',
       previewSrc: prev.mode === 'upload' ? 'upload' : 'drive', previewId: prev.mode === 'drive' ? prev.id : '',
@@ -372,6 +422,7 @@ export function bindEditor() {
       if (t.name === 'main_mode' && t.value === 'json' && form.elements.solution_mode?.value === 'none') form.elements.solution_mode.value = 'json';
       syncSrc(form);
     }
+    if (t.name === 'grp_on' && t.closest?.('#formNew, #formSrc')) syncGroups(t.closest('#formNew, #formSrc'));
     if (t.id === 'nSubject') { $('#nUnit').innerHTML = unitOptions(t.value, ''); }
     if (t.matches?.('[data-edhost] select[name=subject]')) { $('select[name=unit]', t.closest('[data-edhost]')).innerHTML = unitOptions(t.value, ''); }
   });

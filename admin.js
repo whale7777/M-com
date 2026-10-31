@@ -1,6 +1,6 @@
-import { $, $$, esc, clone, uid, safeColor, fmtDate, fmtDT, num, ID_RE, toast, extractDriveId, saveBlob, move, DAY, MAX_UPLOAD_MB, fmtSize, STORAGE_QUOTA_MB, RENDER_URL } from './util.js?v=24';
-import { S, subj, unitOf, created, flatUnits, unitIds, can, ROLES } from './state.js?v=24';
-import { DEFAULT_MENU } from './defaults.js?v=24';
+import { $, $$, esc, clone, uid, safeColor, fmtDate, fmtDT, num, ID_RE, toast, extractDriveId, saveBlob, move, DAY, MAX_UPLOAD_MB, fmtSize, STORAGE_QUOTA_MB, RENDER_URL } from './util.js?v=25';
+import { S, subj, unitOf, created, flatUnits, unitIds, can, ROLES } from './state.js?v=25';
+import { DEFAULT_MENU } from './defaults.js?v=25';
 
 let editId = null, taxDraft = null, taxDirty = false, bannerDraft = null, bannerDirty = false, menuDraft = null, menuDirty = false;
 let passCache = [], pointsCache = [], chargesCache = [], ledgerCache = [];
@@ -53,6 +53,7 @@ function switchTab(id) {
   if (id === 'tabStaff') refreshStaff().then(renderStaff);
   if (id === 'tabStorage') renderStorage();
   if (id === 'tabMembers') renderMembers();
+  if (id === 'tabGroups') renderGroups();
 }
 
 /* ---- 대시보드 ---- */
@@ -536,6 +537,14 @@ export function bindAdmin() {
   $('#formSite').onsubmit = submitSite;
   $('#btnExport').onclick = exportBackup;
   $('#formStaff').onsubmit = submitStaff;
+  const gb = $('#groupBox');
+  gb.addEventListener('submit', (e) => { if (e.target.id === 'formGroup') { e.preventDefault(); groupAction('create', e.target.elements.name.value); } });
+  gb.addEventListener('input', (e) => { if (e.target.id === 'gSearch') { G.q = e.target.value; renderRoster(); } });
+  gb.addEventListener('change', (e) => {
+    const t = e.target;
+    if (t.id === 'gFilter') { G.f = t.value; renderRoster(); }
+    else if (t.dataset.gpick !== undefined) { if (t.checked) G.sel.add(t.dataset.gpick); else G.sel.delete(t.dataset.gpick); t.closest('.gmem')?.classList.toggle('on', t.checked); $('#gSel').textContent = `${G.sel.size}명 선택`; }
+  });
 }
 
 // 전역 클릭 위임에서 호출. 처리했으면 true
@@ -543,6 +552,14 @@ export async function adminClick(e, t) {
   const d = t.dataset;
   if (d.tab) { switchTab(d.tab); return true; }
   if (d.mstat !== undefined) { await memberStatus(d.mstat); return true; }
+  if (d.gren !== undefined) { await groupAction('rename', d.gren); return true; }
+  if (d.gdel !== undefined) { await groupAction('delete', d.gdel); return true; }
+  if (d.gact !== undefined) { await groupAction(d.gact); return true; }
+  if (d.gsall !== undefined) {
+    const vis = gVisible(), all = vis.length && vis.every((r) => G.sel.has(r.id));
+    vis.forEach((r) => (all ? G.sel.delete(r.id) : G.sel.add(r.id)));
+    renderRoster(); return true;
+  }
   if (d.pq !== undefined) { await addQuota(d.pq, Number(d.n) || 10); return true; }
   if (d.fpin !== undefined) {
     const f = S.files.find((x) => x.id === d.fpin);
@@ -664,6 +681,95 @@ async function renderStorage() {
       <tr><td>${esc(r.title || '(삭제된 자료)')}</td><td>${r.json ? 'JSON' : 'PDF'}</td><td>${fmtBytes(Number(r.bytes))}</td><td>${fmtDT(r.at)}</td></tr>`).join('') || '<tr><td colspan="4">아직 업로드한 자료가 없어요.</td></tr>'}</tbody></table>
     <p class="note">※ 사용량은 Supabase 스토리지에서 실제로 읽어온 값이에요(모든 보관함 합계). 다만 <b>총 용량(한도)은 Supabase 가 알려주지 않아서</b> 직접 정한 값이에요 — 기준 용량은 <code>config.js</code> 의 <code>STORAGE_QUOTA_MB</code>(지금 ${STORAGE_QUOTA_MB}MB, 무료 플랜 1GB). 데이터베이스는 따로 ${fmtBytes(Number(st.db_bytes) || 0)} 쓰는 중(무료 500MB).
     ${RENDER_URL ? (st.render ? `<br>변환 서버 캐시: ${fmtBytes(st.render.bytes)} / ${fmtBytes(st.render.limit_bytes)} (${st.render.files}개 · 넘으면 오래된 것부터 자동 삭제, 서버 디스크이고 Supabase 용량과 무관)` : '<br>변환 서버 캐시 정보를 못 가져왔어요. (서버가 잠들어 있을 수 있어요)') : ''}</p>`;
+}
+
+/* ---- v14: 그룹 (가입 명단에서 회원을 그룹에 넣고 빼요) ---- */
+const G = { groups: [], roster: [], sel: new Set(), q: '', f: 'all' };
+const gName = (id) => (G.groups.find((g) => g.id === id) || { name: '(삭제된 그룹)' }).name;
+async function renderGroups() {
+  const box = $('#groupBox');
+  try { [G.groups, G.roster] = await Promise.all([S.api.listGroups(), S.api.listRoster()]); }
+  catch (err) { console.error(err); box.innerHTML = '<p class="note">그룹을 불러오지 못했어요. <b>schema_v14_groups.sql</b> 을 Supabase › SQL Editor 에서 실행했는지, 권한(회원 관리)이 있는지 확인해줘.</p>'; return; }
+  S.groups = G.groups;
+  G.sel = new Set([...G.sel].filter((id) => G.roster.some((r) => r.id === id)));
+  box.innerHTML = `<form id="formGroup" class="inline-form"><input name="name" maxlength="30" placeholder="새 그룹 이름 (예: 2학년 A반)" required aria-label="그룹 이름"><button class="btn primary sm" type="submit">그룹 만들기</button></form>
+    <div id="gList" class="gchips"></div>
+    <h4>가입 명단 <small id="gCount"></small></h4>
+    <div class="gbar">
+      <input id="gSearch" type="search" placeholder="ID · 별명 검색" aria-label="명단 검색">
+      <select id="gFilter" aria-label="보기"></select>
+      <button class="btn sm" data-gsall type="button">보이는 사람 전체 선택/해제</button>
+    </div>
+    <div class="gbar act"><b id="gSel">0명 선택</b>
+      <select id="gTarget" aria-label="그룹 고르기"></select>
+      <button class="btn sm primary" data-gact="add" type="button">그룹에 넣기</button>
+      <button class="btn sm" data-gact="remove" type="button">그룹에서 빼기</button></div>
+    <div id="gRoster" class="groster"></div>`;
+  $('#gSearch').value = G.q;
+  renderGroupParts();
+}
+function renderGroupParts() {
+  const cnt = (gid) => G.roster.filter((r) => r.groups.includes(gid)).length;
+  $('#gList').innerHTML = G.groups.length ? G.groups.map((g) => `<span class="gchip"><b>${esc(g.name)}</b> <small>${cnt(g.id)}명</small>
+    <button type="button" class="mini" data-gren="${esc(g.id)}" title="이름 바꾸기" aria-label="이름 바꾸기">✏️</button><button type="button" class="mini" data-gdel="${esc(g.id)}" title="그룹 삭제" aria-label="그룹 삭제">🗑</button></span>`).join('')
+    : '<p class="note">아직 그룹이 없어요. 위에서 먼저 만들어줘.</p>';
+  const fsel = $('#gFilter'), tsel = $('#gTarget');
+  const opt = G.groups.map((g) => `<option value="${esc(g.id)}">${esc(g.name)}</option>`).join('');
+  fsel.innerHTML = `<option value="all">전체 회원</option><option value="none">그룹 없는 회원</option>${opt}`;
+  if (![...fsel.options].some((o) => o.value === G.f)) G.f = 'all';
+  fsel.value = G.f;
+  const keep = tsel.value;
+  tsel.innerHTML = opt || '<option value="">(그룹 없음)</option>';
+  if (keep && [...tsel.options].some((o) => o.value === keep)) tsel.value = keep;
+  renderRoster();
+}
+const gVisible = () => {
+  const q = G.q.trim().toLowerCase();
+  return G.roster.filter((r) => (G.f === 'all' || (G.f === 'none' ? !r.groups.length : r.groups.includes(G.f)))
+    && (!q || r.username.toLowerCase().includes(q) || (r.nick || '').toLowerCase().includes(q)));
+};
+function renderRoster() {
+  const vis = gVisible();
+  $('#gCount').textContent = `(${vis.length} / 승인된 회원 ${G.roster.length}명)`;
+  $('#gSel').textContent = `${G.sel.size}명 선택`;
+  $('#gRoster').innerHTML = vis.length ? vis.map((r) => `<label class="gmem ${G.sel.has(r.id) ? 'on' : ''}"><input type="checkbox" data-gpick="${esc(r.id)}"${G.sel.has(r.id) ? ' checked' : ''}>
+    <span class="gn"><b>${esc(r.nick || r.username)}</b>${r.nick ? ` <small>(${esc(r.username)})</small>` : ''}</span>
+    <span class="gtags">${r.groups.length ? r.groups.map((g) => `<i class="gtag">${esc(gName(g))}</i>`).join('') : '<small class="dim">그룹 없음</small>'}</span></label>`).join('')
+    : '<p class="note">조건에 맞는 회원이 없어요.</p>';
+}
+async function groupAction(kind, arg) {
+  try {
+    if (kind === 'create') {
+      const name = String(arg || '').trim();
+      if (!name) return toast('그룹 이름을 적어줘');
+      const r = await S.api.addGroup(name);
+      if (r === 'taken') return toast('이미 있는 그룹 이름이에요');
+      toast('그룹을 만들었어 ✅');
+    } else if (kind === 'rename') {
+      const g = G.groups.find((x) => x.id === arg); if (!g) return;
+      const name = (prompt('새 그룹 이름', g.name) || '').trim();
+      if (!name || name === g.name) return;
+      if ((await S.api.renameGroup(g.id, name)) === 'taken') return toast('이미 있는 그룹 이름이에요');
+      toast('이름을 바꿨어 ✅');
+    } else if (kind === 'delete') {
+      const g = G.groups.find((x) => x.id === arg); if (!g) return;
+      const used = S.files.filter((f) => (f.allowGroups || []).includes(g.id));
+      if (used.length) return toast(`"${g.name}" 그룹을 쓰는 자료가 ${used.length}개 있어요. 그 자료의 그룹 제한을 먼저 바꿔줘 (예: ${used[0].title.slice(0, 20)})`);
+      if (!confirm(`"${g.name}" 그룹을 지울까? (회원 계정은 그대로예요)`)) return;
+      const r = await S.api.deleteGroup(g.id);
+      if (r === 'in_use') return toast('이 그룹을 쓰는 자료가 있어서 지울 수 없어요');
+      toast('그룹을 지웠어');
+    } else if (kind === 'add' || kind === 'remove') {
+      const gid = $('#gTarget')?.value;
+      if (!gid) return toast('먼저 그룹을 만들고 골라줘');
+      if (!G.sel.size) return toast('명단에서 회원을 먼저 선택해줘');
+      const ids = [...G.sel];
+      await S.api.setGroupMembers(gid, ids, kind === 'add');
+      toast(`${ids.length}명을 "${gName(gid)}" 그룹에서 ${kind === 'add' ? '넣었어 ✅' : '뺐어'}`);
+      G.sel.clear();
+    }
+  } catch (err) { console.error(err); toast(FAIL); }
+  await renderGroups();
 }
 
 /* ---- v12: 가입 승인 ---- */

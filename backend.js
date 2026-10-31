@@ -1,5 +1,6 @@
-import { DAY, clone, fmtDate, driveDownloadUrl, drivePreviewUrl, RENDER_URL, STORAGE_QUOTA_MB } from './util.js?v=24';
-import { DEFAULT_TAX, DEFAULT_SITE, buildPrem } from './defaults.js?v=24';
+import { DAY, clone, fmtDate, driveDownloadUrl, drivePreviewUrl, RENDER_URL, STORAGE_QUOTA_MB, makeZip, cleanName, uniqueNames } from './util.js?v=25';
+import { partsOf } from './state.js?v=25';
+import { DEFAULT_TAX, DEFAULT_SITE, buildPrem } from './defaults.js?v=25';
 
 const must = ({ data, error }) => { if (error) throw error; return data; };
 
@@ -60,6 +61,12 @@ export function demoBackend(flags = {}) {
   const listeners = [];
   let cur = null;
   const find = (id) => files.find((f) => f.id === id);
+  // v14 데모: 그룹 · 가입 명단
+  let groups = [{ id: 'g1', name: 'A반' }, { id: 'g2', name: 'B반' }];
+  let gseq = 3;
+  const roster = ['demo_user', 'student01', 'student02', 'student03', 'soon01', 'minsu', 'jiyoung'].map((u) => ({ id: 'u_' + u, username: u, nick: u === 'minsu' ? '민수' : '', at: now - 20 * DAY }));
+  const gm = { g1: new Set(['u_student01', 'u_student02']), g2: new Set(['u_student03']) }; // 그룹 → 회원 id
+  const inGroups = (f) => !(f.allowGroups && f.allowGroups.length) || window.__demoAdmin || (cur && f.allowGroups.some((g) => gm[g]?.has(cur.id)));
   const nicks = {}; // 데모 별명 { 아이디: {nick, locked} }
   const mstat = { newbie01: 'pending', oldbie02: 'rejected' };
   const user = (id, status = 'approved') => ({ id: 'u_' + id, username: id, role: 'student', status: mstat[id] || status, nick: nicks[id]?.nick || '', nickLocked: !!nicks[id]?.locked });
@@ -109,6 +116,7 @@ export function demoBackend(flags = {}) {
       if (!cur) return 'login';
       if (!f || f.visible === false) return 'not_found';
       if (owned.has(id) && (exp[id] || 0) > Date.now()) return 'already';
+      if (!inGroups(f)) return 'group_only';
       if (!(f.price > 0)) return 'not_for_sale';
       const bal = pts[cur.username] || 0;
       if (bal < f.price) return 'insufficient';
@@ -121,6 +129,7 @@ export function demoBackend(flags = {}) {
       const f = find(id);
       if (!cur) return 'login';
       if (!f || f.visible === false) return 'not_found';
+      if (!inGroups(f)) return 'group_only';
       if (f.tier === 'free') return 'free';
       if (owned.has(id) && (exp[id] || 0) > Date.now()) return 'already';
       const p = passOf(cur.username), pi = passInfo(p);
@@ -178,14 +187,33 @@ export function demoBackend(flags = {}) {
     }),
     addFile: async (f, ids) => {
       const id = 'd' + Date.now();
-      files.unshift({ ...f, id, downloads: 0, pinned: false, createdAt: Date.now(), driveId: f.tier === 'free' && (f.mainSrc || 'drive') === 'drive' ? ids.main : undefined });
-      prem[id] = buildPrem(f.tier, ids);
+      const lim = !!(f.allowGroups && f.allowGroups.length);
+      files.unshift({ ...f, id, downloads: 0, pinned: false, createdAt: Date.now(), driveId: f.tier === 'free' && !lim && (f.mainSrc || 'drive') === 'drive' ? ids.main : undefined });
+      prem[id] = buildPrem(f.tier, ids, lim);
       return id;
     },
     updateFile: async (id, f, ids) => {
-      Object.assign(find(id), f, { driveId: f.tier === 'free' && (f.mainSrc || 'drive') === 'drive' ? ids.main : undefined });
-      prem[id] = buildPrem(f.tier, ids);
+      const lim = !!(f.allowGroups && f.allowGroups.length);
+      Object.assign(find(id), f, { driveId: f.tier === 'free' && !lim && (f.mainSrc || 'drive') === 'drive' ? ids.main : undefined });
+      prem[id] = buildPrem(f.tier, ids, lim);
     },
+    // ---- v14 그룹 ----
+    listGroups: async () => clone(groups).sort((a, b) => a.name.localeCompare(b.name, 'ko')),
+    addGroup: async (name) => {
+      if (groups.some((g) => g.name.trim().toLowerCase() === name.trim().toLowerCase())) return 'taken';
+      const id = 'g' + gseq++; groups.push({ id, name: name.trim() }); gm[id] = new Set(); return 'ok';
+    },
+    renameGroup: async (id, name) => {
+      if (groups.some((g) => g.id !== id && g.name.trim().toLowerCase() === name.trim().toLowerCase())) return 'taken';
+      const g = groups.find((x) => x.id === id); if (!g) return 'not_found'; g.name = name.trim(); return 'ok';
+    },
+    deleteGroup: async (id) => {
+      if (files.some((f) => (f.allowGroups || []).includes(id))) return 'in_use';
+      groups = groups.filter((g) => g.id !== id); delete gm[id]; return 'ok';
+    },
+    listRoster: async () => roster.map((r) => ({ ...r, nick: nicks[r.username]?.nick || r.nick, groups: groups.filter((g) => gm[g.id]?.has(r.id)).map((g) => g.id) })),
+    setGroupMembers: async (gid, userIds, add) => { if (!gm[gid]) return 'not_found'; userIds.forEach((u) => (add ? gm[gid].add(u) : gm[gid].delete(u))); return 'ok'; },
+    myGroups: async (u) => groups.filter((g) => gm[g.id]?.has(u.id)).map((g) => g.id),
     listNotices: async (admin) => clone(notices.filter((n) => admin || n.visible)),
     addNotice: async (n, author) => { notices.unshift({ ...n, id: 'n' + Date.now(), author, createdAt: Date.now(), updatedAt: null }); },
     updateNotice: async (id, n) => { Object.assign(notices.find((x) => x.id === id), n, { updatedAt: Date.now() }); },
@@ -245,7 +273,15 @@ export function demoBackend(flags = {}) {
 export function supabaseBackend(sb) {
   const emailOf = (id) => `${id.toLowerCase()}@pyclass.site`; // PyNest 와 같은 규칙
   const premRow = (fileId, prem) => ({ file_id: fileId, drive_id: prem.driveId || null, solution_id: prem.solutionId || null });
+  let v14 = null; // v14 SQL(그룹·여러 파일)이 적용된 DB 인지 (처음 자료 목록을 읽을 때 확인)
+  const needV14 = (f) => {
+    if (!v14 && ((f.allowGroups && f.allowGroups.length) || (f.mainFiles || []).length > 1 || (f.solutionFiles || []).length > 1)) {
+      throw new Error('DB 에 schema_v14_groups.sql 을 먼저 실행해야 해요 (여러 파일 / 그룹 기능). Supabase › SQL Editor 에서 실행해줘.');
+    }
+  };
   const fromRow = (r) => ({
+    mainFiles: Array.isArray(r.main_files) ? r.main_files : [], solutionFiles: Array.isArray(r.solution_files) ? r.solution_files : [],
+    allowGroups: Array.isArray(r.allow_groups) ? r.allow_groups : [],
     id: r.id, title: r.title, subject: r.subject, unit: r.unit, level: r.level, tier: r.tier, count: r.count,
     desc: r.desc, previewId: r.preview_id, hasSolution: r.has_solution, visible: r.visible, pinned: r.pinned,
     downloads: r.downloads, price: r.price || 0, driveId: r.drive_id || undefined, createdAt: Date.parse(r.created_at) || 0,
@@ -255,6 +291,7 @@ export function supabaseBackend(sb) {
     title: f.title, subject: f.subject, unit: f.unit, level: f.level, tier: f.tier, count: f.count,
     desc: f.desc, preview_id: f.previewId, has_solution: f.hasSolution, visible: f.visible, price: f.price || 0,
     main_src: f.mainSrc || 'drive', solution_src: f.solutionSrc || 'drive', preview_src: f.previewSrc || 'drive',
+    ...(v14 ? { main_files: f.mainFiles || [], solution_files: f.solutionFiles || [], allow_groups: f.allowGroups || [] } : {}),
   });
   const profileOf = async (session) => {
     const uid = session.user.id;
@@ -274,16 +311,24 @@ export function supabaseBackend(sb) {
   const KINDS = ['main', 'solution', 'preview'];
   const objPath = (id, kind) => `${id}/${kind}.pdf`;
   const safeName = (t, kind) => `${String(t || 'file').replace(/[\\/:*?"<>|\r\n]+/g, ' ').trim().slice(0, 80) || 'file'}${kind === 'solution' ? ' 해설' : ''}.pdf`;
+  const putPdf = async (path, file, upsert) => must(await sb.storage.from(BUCKET).upload(path, file, { upsert, contentType: 'application/pdf', cacheControl: '3600' }));
   const uploadAll = async (id, up = {}, upsert = true) => {
-    for (const k of KINDS) {
-      if (up[k]) must(await sb.storage.from(BUCKET).upload(objPath(id, k), up[k], { upsert, contentType: 'application/pdf', cacheControl: '3600' }));
-    }
+    for (const k of ['main', 'solution']) for (const it of up[k] || []) await putPdf(`${id}/${it.p}`, it.file, upsert); // v14: [{p:'main_2.pdf', file}] 여러 장
+    if (up.preview) await putPdf(objPath(id, 'preview'), up.preview, upsert);
     if (up.mainJson) must(await sb.storage.from(BUCKET).upload(`${id}/main.json`, up.mainJson, { upsert: true, contentType: 'application/json', cacheControl: '0' }));
     for (const im of up.images || []) {
       must(await sb.storage.from(BUCKET).upload(imgPath(id, im.name), im.blob, { upsert: true, contentType: im.type, cacheControl: '3600' }));
     }
   };
-  const removeObjects = async (id, kinds = KINDS) => { try { await sb.storage.from(BUCKET).remove(kinds.map((k) => objPath(id, k))); } catch { /* 없어도 괜찮아요 */ } };
+  // 자료 폴더 안의 PDF 중 kinds(main/solution/preview)에 해당하는 것을 지워요. keep 에 든 파일 이름은 남겨요.
+  const removeObjects = async (id, kinds = KINDS, keep = []) => {
+    try {
+      const { data, error } = await sb.storage.from(BUCKET).list(id, { limit: 200 });
+      const have = error ? kinds.map((k) => `${k}.pdf`) : (data || []).map((o) => o.name);
+      const names = have.filter((n) => /^(main|solution|preview)(_\d+)?\.pdf$/.test(n) && kinds.includes(n.replace(/(_\d+)?\.pdf$/, '')) && !keep.includes(n));
+      if (names.length) await sb.storage.from(BUCKET).remove(names.map((n) => `${id}/${n}`));
+    } catch { /* 없어도 괜찮아요 */ }
+  };
   const nz = (x) => (x ? x : null);
 
   // ---- v10: JSON(mhq/1) 자료 ----
@@ -358,7 +403,12 @@ export function supabaseBackend(sb) {
     saveTax: async (t) => { must(await sb.from('mh_meta').upsert({ key: 'taxonomy', value: { subjects: t }, updated_at: new Date().toISOString() })); },
     saveSite: async (s) => { must(await sb.from('mh_meta').upsert({ key: 'site', value: s, updated_at: new Date().toISOString() })); },
 
-    listFiles: async () => must(await sb.from('mh_files').select('*')).map(fromRow), // 숨김 자료는 서버가 관리자에게만 줌
+    listFiles: async () => {
+      const rows = must(await sb.from('mh_files').select('*')); // 숨김 자료는 서버가 관리자에게만 줌
+      if (rows.length) v14 = 'allow_groups' in rows[0];
+      else if (v14 === null) { try { v14 = !(await sb.from('mh_groups').select('id').limit(1)).error; } catch { v14 = false; } }
+      return rows.map(fromRow);
+    },
     hasPass: async () => (await rpc('mh_has_pass')) === true,
     // 내 직원 역할 (staff_roles.sql 을 아직 안 돌렸으면 조용히 null)
     myRole: async () => {
@@ -393,7 +443,7 @@ export function supabaseBackend(sb) {
       return r ? { driveId: r.drive_id || undefined, solutionId: r.solution_id || undefined } : {};
     },
     getDriveId: async (f, kind) => {
-      if (kind === 'main' && f.tier === 'free') return f.driveId;
+      if (kind === 'main' && f.tier === 'free' && f.driveId) return f.driveId;
       const r = must(await sb.from('mh_premium').select('drive_id,solution_id').eq('file_id', f.id).maybeSingle()); // 권한 없으면 서버가 안 줌
       const id = r && (kind === 'solution' ? r.solution_id : r.drive_id);
       if (!id) throw new Error('파일 ID 없음');
@@ -408,6 +458,21 @@ export function supabaseBackend(sb) {
         setTimeout(() => URL.revokeObjectURL(url), 120000);
         return url;
       }
+      if (src === 'upload' && kind !== 'preview' && partsOf(f, kind).length > 1) {
+        // v14: 여러 장이면 브라우저에서 받아 zip 한 개로 묶어요 (PDF 는 이미 압축돼 있어서 저장만 해요)
+        const parts = partsOf(f, kind);
+        const names = uniqueNames(parts.map((x, i) => cleanName(x.n, `${f.title} ${i + 1}`).replace(/(\.pdf)?$/i, '.pdf')));
+        const entries = await Promise.all(parts.map(async (x, i) => {
+          const { data, error } = await sb.storage.from(BUCKET).createSignedUrl(`${f.id}/${x.p}`, 120);
+          if (error || !data?.signedUrl) throw error || new Error('권한 없음');
+          const res = await fetch(data.signedUrl);
+          if (!res.ok) throw new Error(`파일을 받지 못했어요 (${names[i]})`);
+          return { name: names[i], data: new Uint8Array(await res.arrayBuffer()) };
+        }));
+        const url = URL.createObjectURL(makeZip(entries));
+        setTimeout(() => URL.revokeObjectURL(url), 120000);
+        return url;
+      }
       if (src === 'upload') {
         const opt = kind === 'preview' ? undefined : { download: safeName(f.title, kind) };
         const { data, error } = await sb.storage.from(BUCKET).createSignedUrl(objPath(f.id, kind), 120, opt);
@@ -416,7 +481,7 @@ export function supabaseBackend(sb) {
       }
       if (kind === 'preview') return drivePreviewUrl(f.previewId);
       const id = await (async () => {
-        if (kind === 'main' && f.tier === 'free') return f.driveId;
+        if (kind === 'main' && f.tier === 'free' && f.driveId) return f.driveId;
         const r = must(await sb.from('mh_premium').select('drive_id,solution_id').eq('file_id', f.id).maybeSingle());
         return r && (kind === 'solution' ? r.solution_id : r.drive_id);
       })();
@@ -441,10 +506,12 @@ export function supabaseBackend(sb) {
     requestPass: (planId, depositor) => rpc('mh_request_pass', { p_plan: planId, p_depositor: depositor || '' }),
     requestCharge: (amount, depositor) => rpc('mh_request_charge', { p_amount: amount, p_depositor: depositor || '' }),
     addFile: async (f, ids, up = {}) => {
-      const { id } = must(await sb.from('mh_files').insert({ ...toRow(f), drive_id: f.tier === 'free' && (f.mainSrc || 'drive') === 'drive' ? nz(ids.main) : null }).select('id').single());
+      needV14(f);
+      const lim = !!(f.allowGroups && f.allowGroups.length);
+      const { id } = must(await sb.from('mh_files').insert({ ...toRow(f), drive_id: f.tier === 'free' && !lim && (f.mainSrc || 'drive') === 'drive' ? nz(ids.main) : null }).select('id').single());
       try {
         await uploadAll(id, up, false);
-        const prem = buildPrem(f.tier, ids);
+        const prem = buildPrem(f.tier, ids, lim);
         if (Object.keys(prem).length) must(await sb.from('mh_premium').insert(premRow(id, prem)));
       } catch (err) { // 중간에 실패하면 반쯤 만들어진 자료를 지워요
         await removeObjects(id);
@@ -455,18 +522,57 @@ export function supabaseBackend(sb) {
       return id;
     },
     updateFile: async (id, f, ids, up = {}) => {
-      must(await sb.from('mh_files').update({ ...toRow(f), drive_id: f.tier === 'free' && (f.mainSrc || 'drive') === 'drive' ? nz(ids.main) : null, updated_at: new Date().toISOString() }).eq('id', id));
+      needV14(f);
+      const lim = !!(f.allowGroups && f.allowGroups.length);
+      must(await sb.from('mh_files').update({ ...toRow(f), drive_id: f.tier === 'free' && !lim && (f.mainSrc || 'drive') === 'drive' ? nz(ids.main) : null, updated_at: new Date().toISOString() }).eq('id', id));
       await uploadAll(id, up);
-      const prem = buildPrem(f.tier, ids);
+      const prem = buildPrem(f.tier, ids, lim);
       if (Object.keys(prem).length) must(await sb.from('mh_premium').upsert(premRow(id, prem)));
       else must(await sb.from('mh_premium').delete().eq('file_id', id));
-      // 드라이브 방식으로 바꾼 항목의 예전 업로드 파일 정리
-      const old = [];
-      if (f.mainSrc !== 'upload') old.push('main');
+      // 방식을 바꾸거나 파일 수가 줄어서 안 쓰게 된 예전 업로드 파일 정리 (새로 올린 뒤에 지워서, 중간에 실패해도 예전 파일은 남아요)
       if (f.mainSrc !== 'json') await removeJson(id);
-      if (f.solutionSrc !== 'upload' || !f.hasSolution) old.push('solution');
-      if (f.previewSrc !== 'upload') old.push('preview');
-      if (old.length) await removeObjects(id, old);
+      await removeObjects(id, ['main'], f.mainSrc === 'upload' ? partsOf(f, 'main').map((x) => x.p) : []);
+      await removeObjects(id, ['solution'], f.hasSolution && f.solutionSrc === 'upload' ? partsOf(f, 'solution').map((x) => x.p) : []);
+      if (f.previewSrc !== 'upload') await removeObjects(id, ['preview']);
+    },
+    // ---- v14 그룹 ----
+    listGroups: async () => must(await sb.from('mh_groups').select('id,name').order('name')).map((r) => ({ id: r.id, name: r.name })),
+    addGroup: async (name) => {
+      const { error } = await sb.from('mh_groups').insert({ name: name.trim() });
+      if (error) { if (/duplicate|unique|23505/i.test(error.message + error.code)) return 'taken'; throw error; }
+      return 'ok';
+    },
+    renameGroup: async (id, name) => {
+      const { error } = await sb.from('mh_groups').update({ name: name.trim() }).eq('id', id);
+      if (error) { if (/duplicate|unique|23505/i.test(error.message + error.code)) return 'taken'; throw error; }
+      return 'ok';
+    },
+    deleteGroup: async (id) => {
+      const used = must(await sb.from('mh_files').select('id').contains('allow_groups', [id]).limit(1));
+      if (used.length) return 'in_use';
+      must(await sb.from('mh_groups').delete().eq('id', id));
+      return 'ok';
+    },
+    // 가입 명단(승인된 회원) + 각자의 그룹
+    listRoster: async () => {
+      const p = must(await sb.from('profiles').select('id,username,created_at').eq('status', 'approved').order('username').limit(5000));
+      const nk = {};
+      try { (must(await sb.from('nicknames').select('user_id,nickname').limit(5000)) || []).forEach((r) => { nk[r.user_id] = r.nickname; }); } catch { /* 무시 */ }
+      const g = {};
+      must(await sb.from('mh_group_members').select('group_id,user_id').limit(20000)).forEach((r) => { (g[r.user_id] ||= []).push(r.group_id); });
+      return p.map((x) => ({ id: x.id, username: x.username, nick: nk[x.id] || '', at: Date.parse(x.created_at) || 0, groups: g[x.id] || [] }));
+    },
+    setGroupMembers: async (gid, userIds, add) => {
+      for (let i = 0; i < userIds.length; i += 200) {
+        const part = userIds.slice(i, i + 200);
+        if (add) must(await sb.from('mh_group_members').upsert(part.map((u) => ({ group_id: gid, user_id: u })), { onConflict: 'group_id,user_id' }));
+        else must(await sb.from('mh_group_members').delete().eq('group_id', gid).in('user_id', part));
+      }
+      return 'ok';
+    },
+    myGroups: async (u) => {
+      const r = await sb.from('mh_group_members').select('group_id').eq('user_id', u.id); // v14 SQL 전이면 오류 → 그룹 없음
+      return r.error ? [] : (r.data || []).map((x) => x.group_id);
     },
     patchFile: async (id, patch) => { must(await sb.from('mh_files').update(patch).eq('id', id)); },
     deleteFile: async (id) => { await removeObjects(id); await removeJson(id); must(await sb.from('mh_files').delete().eq('id', id)); },
@@ -491,7 +597,9 @@ export function supabaseBackend(sb) {
     exportAll: async () => {
       const t = ['mh_files', 'mh_premium', 'mh_pass', 'mh_points', 'mh_ledger', 'mh_purchases', 'mh_charges', 'mh_notices'];
       const res = await Promise.all(t.map((n) => sb.from(n).select('*')));
-      return Object.fromEntries(t.map((n, i) => [n.replace('mh_', ''), must(res[i])]));
+      const out = Object.fromEntries(t.map((n, i) => [n.replace('mh_', ''), must(res[i])]));
+      for (const n of ['mh_groups', 'mh_group_members']) { try { const r = await sb.from(n).select('*'); if (!r.error) out[n.replace('mh_', '')] = r.data; } catch { /* v14 전 */ } }
+      return out;
     },
   };
 }
